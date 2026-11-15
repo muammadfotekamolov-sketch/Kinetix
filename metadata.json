@@ -1,0 +1,11 @@
+{
+  "name": "Kinetix — Видеоредактор и ИИ-студия",
+  "description": "Мобильный и десктопный видеоредактор с многодорожечным таймлайном, цветокоррекцией, ключевыми кадрами, ИИ-генератором видео и публикацией в соцсети.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
