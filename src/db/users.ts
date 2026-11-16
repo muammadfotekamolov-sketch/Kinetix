@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import { db } from './index.ts';
 import { users } from './schema.ts';
 
@@ -14,6 +14,16 @@ export interface UpsertUserInput {
   parentalConsent?: boolean;
 }
 
+export async function findUserByContact(contact: string) {
+  const normalized = contact.trim().toLowerCase();
+  if (!normalized) return null;
+  const rows = await db
+    .select()
+    .from(users)
+    .where(or(eq(users.email, normalized), eq(users.phone, normalized)));
+  return rows[0] ?? null;
+}
+
 export async function getOrCreateUser(input: UpsertUserInput) {
   try {
     const existing = await db
@@ -23,6 +33,7 @@ export async function getOrCreateUser(input: UpsertUserInput) {
     if (existing.length > 0) {
       return existing[0];
     }
+
     const inserted = await db
       .insert(users)
       .values({
@@ -36,14 +47,18 @@ export async function getOrCreateUser(input: UpsertUserInput) {
         language: input.language ?? 'ru',
         parentalConsent: input.parentalConsent ?? false,
       })
-      .onConflictDoUpdate({
-        target: users.uid,
-        set: {
-          email: input.email ?? '',
-        },
-      })
+      .onConflictDoNothing({ target: users.uid })
       .returning();
-    return inserted[0];
+
+    if (inserted.length > 0) {
+      return inserted[0];
+    }
+
+    const afterConflict = await db
+      .select()
+      .from(users)
+      .where(eq(users.uid, input.uid));
+    return afterConflict[0];
   } catch (error) {
     console.error('Database error in getOrCreateUser:', error);
     throw new Error('Failed to load or register user.', { cause: error });

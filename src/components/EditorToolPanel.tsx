@@ -130,7 +130,8 @@ export function EditorToolPanel({
     }
   });
   const [stickerFilter, setStickerFilter] = useState<'all' | 'fav'>('all');
-  const [audioCategory, setAudioCategory] = useState<'all' | 'Музыка' | 'Эффекты'>('all');
+  const [audioCategory, setAudioCategory] = useState<string>('all');
+  const [audioQuery, setAudioQuery] = useState('');
   const [effectCategory, setEffectCategory] = useState<'all' | 'video' | 'face' | 'body'>('all');
   const [animMode, setAnimMode] = useState<'in' | 'out' | 'loop'>('in');
   const [recording, setRecording] = useState(false);
@@ -143,6 +144,7 @@ export function EditorToolPanel({
   const stickerInputRef = useRef<HTMLInputElement | null>(null);
   const lutInputRef = useRef<HTMLInputElement | null>(null);
   const bgImgInputRef = useRef<HTMLInputElement | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (activeTab === 'color') {
@@ -583,6 +585,39 @@ export function EditorToolPanel({
               ...prev,
               background: { ...prev.background, type: 'image', imageUrl: url },
             }));
+          }
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) {
+            const url = URL.createObjectURL(f);
+            const newClip: AudioClip = {
+              id: `aud_dev_${Date.now()}`,
+              track: 'A1',
+              name: f.name,
+              src: url,
+              startMs: currentTimeMs,
+              durationMs: 15000,
+              volume: 90,
+              fadeInMs: 250,
+              fadeOutMs: 500,
+              voiceEffect: 'none',
+              denoise: false,
+              eq: [0, 0, 0, 0, 0],
+              beatSynced: false,
+            };
+            onChangeState((prev) => ({
+              ...prev,
+              audioClips: [...prev.audioClips, newClip],
+            }));
+            onSelect({ kind: 'audio', id: newClip.id });
           }
           e.target.value = '';
         }}
@@ -1984,32 +2019,48 @@ export function EditorToolPanel({
       {/* TAB 11: AUDIO STUDIO */}
       {activeTab === 'audio' && (
         <div className="space-y-3">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
               onClick={handleToggleVoiceRecord}
-              className={`flex-1 py-2.5 rounded-lg font-semibold flex items-center justify-center gap-2 ${
+              className={`flex-1 min-w-[140px] py-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 ${
                 recording
                   ? 'bg-[#FF2D6F] text-white'
                   : 'bg-[#161619] border border-[#FF2D6F]/40 text-[#FF7DA6]'
               }`}
             >
-              <Mic className="w-4 h-4" />
-              <span>{recording ? 'Стоп запись' : 'Озвучка микрофоном'}</span>
+              <Mic className="w-3.5 h-3.5" />
+              <span>{recording ? 'Стоп запись' : 'Микрофон'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => audioFileInputRef.current?.click()}
+              className="px-2.5 py-2 rounded-lg bg-[#161619] border border-[#00E5FF]/40 text-[#00E5FF] font-medium flex items-center gap-1"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>С телефона</span>
             </button>
             {activeClip && (
               <button
                 type="button"
                 onClick={handleDetachAudio}
-                className="px-3 py-2.5 rounded-lg bg-[#161619] border border-white/10 text-zinc-200 hover:border-[#00E5FF]"
+                className="px-2.5 py-2 rounded-lg bg-[#161619] border border-white/10 text-zinc-200 hover:border-[#00E5FF]"
               >
                 Извлечь звук
               </button>
             )}
           </div>
 
-          <div className="flex gap-1.5">
-            {(['all', 'Музыка', 'Эффекты'] as const).map((cat) => (
+          <input
+            type="text"
+            value={audioQuery}
+            onChange={(e) => setAudioQuery(e.target.value)}
+            placeholder="Поиск музыки (phonk, trap, lofi, pop)..."
+            className="w-full px-3 py-1.5 rounded-lg bg-[#161619] border border-white/10 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#00E5FF]"
+          />
+
+          <div className="flex flex-wrap gap-1.5">
+            {(['all', 'Phonk', 'Trap', 'EDM', 'Pop', 'Lo-Fi', 'Эффекты'] as const).map((cat) => (
               <button
                 key={cat}
                 type="button"
@@ -2020,14 +2071,18 @@ export function EditorToolPanel({
                     : 'bg-[#161619] text-zinc-400 hover:text-white'
                 }`}
               >
-                {cat === 'all' ? 'Все звуки' : cat}
+                {cat === 'all' ? `Все (${AUDIO_LIBRARY.length})` : cat}
               </button>
             ))}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
             {AUDIO_LIBRARY.filter(
-              (tr) => audioCategory === 'all' || tr.category === audioCategory,
+              (tr) =>
+                (audioCategory === 'all' || tr.category === audioCategory) &&
+                (!audioQuery.trim() ||
+                  tr.name.toLowerCase().includes(audioQuery.toLowerCase()) ||
+                  tr.category.toLowerCase().includes(audioQuery.toLowerCase())),
             ).map((tr) => (
               <div
                 key={tr.id}
@@ -2068,17 +2123,18 @@ export function EditorToolPanel({
                   <button
                     type="button"
                     onClick={() => {
+                      const isSfx = tr.category === 'Эффекты';
                       const newClip: AudioClip = {
                         id: `aud_${Date.now()}`,
-                        track: tr.category === 'Эффекты' ? 'A2' : 'A1',
+                        track: isSfx ? 'A2' : 'A1',
                         name: tr.name,
                         src: '',
                         synthPreset: tr.preset,
                         startMs: currentTimeMs,
                         durationMs: tr.durationMs,
                         volume: 85,
-                        fadeInMs: tr.category === 'Эффекты' ? 0 : 250,
-                        fadeOutMs: tr.category === 'Эффекты' ? 100 : 500,
+                        fadeInMs: isSfx ? 0 : 250,
+                        fadeOutMs: isSfx ? 100 : 500,
                         voiceEffect: 'none',
                         denoise: false,
                         eq: [0, 0, 0, 0, 0],
@@ -2089,7 +2145,7 @@ export function EditorToolPanel({
                         audioClips: [...prev.audioClips, newClip],
                       }));
                       onSelect({ kind: 'audio', id: newClip.id });
-                      if (tr.category === 'Музыка') {
+                      if (!isSfx) {
                         onAddBeatMarkers(tr.bpm, currentTimeMs, tr.durationMs);
                       }
                     }}

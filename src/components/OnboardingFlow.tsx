@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import {
   AlertTriangle,
   Check,
@@ -39,6 +39,7 @@ export function OnboardingFlow({
   onAuthenticated,
 }: Props) {
   const [step, setStep] = useState<'language' | 'register' | 'verify'>('language');
+  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
   const [lang, setLang] = useState<LanguageCode>(initialLanguage);
   const dict = t(lang);
 
@@ -57,6 +58,7 @@ export function OnboardingFlow({
   const [parentalConsent, setParentalConsent] = useState(false);
 
   const [otpCode, setOtpCode] = useState('');
+  const [otpToken, setOtpToken] = useState('');
   const [previewCode, setPreviewCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -83,8 +85,10 @@ export function OnboardingFlow({
 
   const fullContact =
     contactType === 'email'
-      ? email.trim()
-      : `${selectedCountry.dial}${phoneDigits.replace(/\D/g, '')}`;
+      ? email.trim().toLowerCase()
+      : phoneDigits.trim().startsWith('+')
+        ? `+${phoneDigits.replace(/\D/g, '')}`
+        : `${selectedCountry.dial}${phoneDigits.replace(/\D/g, '')}`;
 
   const handleLanguagePick = (code: LanguageCode) => {
     setLang(code);
@@ -93,31 +97,81 @@ export function OnboardingFlow({
 
   const handleGoogleSignIn = async () => {
     setError('');
-    if (isUnder13) {
-      setError(dict.under13Blocked);
-      return;
+    if (authMode === 'register') {
+      if (isUnder13) {
+        setError(dict.under13Blocked);
+        return;
+      }
+      if (!acceptedTerms || !acceptedPrivacy) {
+        setError('Необходимо принять Условия использования и Политику конфиденциальности.');
+        return;
+      }
     }
-    if (!acceptedTerms || !acceptedPrivacy) {
-      setError('Необходимо принять Условия использования и Политику конфиденциальности.');
-      return;
+
+    const sessionPayload = {
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      birthDate: authMode === 'register' ? birthDate : undefined,
+      gender: authMode === 'register' ? gender : undefined,
+      language: lang,
+      parentalConsent: authMode === 'register' ? parentalConsent : undefined,
+    };
+
+    try {
+      sessionStorage.setItem('kinetix_pending_google_profile', JSON.stringify(sessionPayload));
+    } catch {
+      // ignore storage quota errors
     }
+
     setLoading(true);
     try {
       await signInWithPopup(auth, googleAuthProvider);
       const data = await apiFetch<{ user: UserProfile }>('/api/auth/session', {
         method: 'POST',
-        body: JSON.stringify({
-          firstName: firstName || undefined,
-          lastName: lastName || undefined,
-          birthDate,
-          gender,
-          language: lang,
-          parentalConsent,
-        }),
+        body: JSON.stringify(sessionPayload),
       });
+      try {
+        sessionStorage.removeItem('kinetix_pending_google_profile');
+      } catch {
+        // ignore
+      }
       onAuthenticated(data.user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Google Sign-In error');
+    } catch (err: unknown) {
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code)
+          : '';
+      if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        try {
+          await signInWithRedirect(auth, googleAuthProvider);
+          return;
+        } catch {
+          setError(
+            'Не удалось открыть окно Google на этом устройстве. Войдите по Email или номеру телефона выше.',
+          );
+          return;
+        }
+      }
+      if (
+        code === 'auth/unauthorized-domain' ||
+        code === 'auth/operation-not-allowed' ||
+        (err instanceof Error && err.message.includes('unauthorized-domain'))
+      ) {
+        setError(
+          'Вход через Google не подключён для этого адреса. Используйте регистрацию или вход по Email / телефону выше — это работает на любом телефоне.',
+        );
+      } else if (code === 'auth/popup-closed-by-user') {
+        setError('Вход через Google был отменён.');
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Ошибка входа через Google. Попробуйте войти по Email или номеру телефона.',
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -126,33 +180,45 @@ export function OnboardingFlow({
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (isUnder13) {
-      setError(dict.under13Blocked);
-      return;
+
+    if (authMode === 'register') {
+      if (isUnder13) {
+        setError(dict.under13Blocked);
+        return;
+      }
+      if (!firstName.trim() || !lastName.trim()) {
+        setError('Введите имя и фамилию.');
+        return;
+      }
+      if (!acceptedTerms || !acceptedPrivacy) {
+        setError('Примите Условия использования и Политику конфиденциальности.');
+        return;
+      }
     }
-    if (!firstName.trim() || !lastName.trim()) {
-      setError('Введите имя и фамилию.');
-      return;
-    }
-    if (!fullContact || fullContact.length < 4) {
-      setError('Введите корректный email или номер телефона.');
-      return;
-    }
-    if (!acceptedTerms || !acceptedPrivacy) {
-      setError('Примите Условия использования и Политику конфиденциальности.');
+
+    if (contactType === 'email') {
+      if (!fullContact.includes('@') || fullContact.length < 5) {
+        setError('Введите корректный адрес электронной почты.');
+        return;
+      }
+    } else if (phoneDigits.replace(/\D/g, '').length < 6) {
+      setError('Введите корректный номер телефона.');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await apiFetch<{ sent: boolean; verificationCodePreview?: string }>(
-        '/api/auth/send-code',
-        {
-          method: 'POST',
-          body: JSON.stringify({ contact: fullContact }),
-        },
-      );
+      const res = await apiFetch<{
+        sent: boolean;
+        verificationCodePreview?: string;
+        otpToken?: string;
+      }>('/api/auth/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ contact: fullContact }),
+      });
       setPreviewCode(res.verificationCodePreview || '');
+      setOtpToken(res.otpToken || '');
+      setOtpCode('');
       setStep('verify');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось отправить код');
@@ -166,6 +232,23 @@ export function OnboardingFlow({
     setError('');
     setLoading(true);
     try {
+      if (authMode === 'login') {
+        const res = await apiFetch<{ token: string; user: UserProfile }>(
+          '/api/auth/verify-login',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              contact: fullContact,
+              code: otpCode,
+              otpToken,
+            }),
+          },
+        );
+        setLocalSessionToken(res.token);
+        onAuthenticated(res.user);
+        return;
+      }
+
       const res = await apiFetch<{ token: string; user: UserProfile }>(
         '/api/auth/verify-register',
         {
@@ -174,6 +257,7 @@ export function OnboardingFlow({
             contact: fullContact,
             contactType,
             code: otpCode,
+            otpToken,
             firstName,
             lastName,
             birthDate,
@@ -188,7 +272,18 @@ export function OnboardingFlow({
       setLocalSessionToken(res.token);
       onAuthenticated(res.user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Неверный код подтверждения');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'ACCOUNT_NOT_FOUND') {
+        setAuthMode('register');
+        setStep('register');
+        setError(
+          'Аккаунт с этим контактом ещё не создан. Заполните профиль ниже, чтобы зарегистрироваться.',
+        );
+      } else if (msg === 'INVALID_OR_EXPIRED_CODE') {
+        setError('Неверный или просроченный код подтверждения. Попробуйте ещё раз.');
+      } else {
+        setError(msg || 'Не удалось подтвердить код');
+      }
     } finally {
       setLoading(false);
     }
@@ -250,10 +345,25 @@ export function OnboardingFlow({
               })}
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() => setStep('register')}
+                onClick={() => {
+                  setError('');
+                  setAuthMode('login');
+                  setStep('register');
+                }}
+                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-[#1C1C1E] border border-white/10 text-zinc-200 font-medium text-sm hover:bg-white/10 transition-all min-h-[48px]"
+              >
+                Уже есть аккаунт — Войти
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setAuthMode('register');
+                  setStep('register');
+                }}
                 className="w-full sm:w-auto px-7 py-3.5 rounded-2xl bg-[#00E5FF] text-black font-semibold text-sm flex items-center justify-center gap-2 hover:bg-[#33ECFF] active:scale-[0.98] transition-all min-h-[48px]"
               >
                 <span>{dict.continueBtn}</span>
@@ -263,98 +373,136 @@ export function OnboardingFlow({
           </div>
         )}
 
-        {/* STEP 2: PERSONAL DATA, CONTACT & AGE/CONSENT */}
+        {/* STEP 2: REGISTER OR LOGIN */}
         {step === 'register' && (
           <form
             onSubmit={handleSendOtp}
             className="bg-[#121212] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-5"
           >
+            {/* Mode Switcher */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-[#1C1C1E] border border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register');
+                  setError('');
+                }}
+                className={`h-10 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  authMode === 'register'
+                    ? 'bg-[#00E5FF] text-black'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Регистрация
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setError('');
+                }}
+                className={`h-10 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  authMode === 'login'
+                    ? 'bg-[#00E5FF] text-black'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Войти в аккаунт
+              </button>
+            </div>
+
             <div>
               <h1 className="font-display text-2xl font-bold text-white">
-                {dict.createAccount}
+                {authMode === 'register' ? dict.createAccount : 'Вход с другого телефона'}
               </h1>
               <p className="text-sm text-zinc-400 mt-1">
-                Создайте профиль Kinetix для облачного сохранения проектов и ИИ-генерации
+                {authMode === 'register'
+                  ? 'Создайте профиль Kinetix для облачного сохранения проектов и ИИ-генерации'
+                  : 'Введите email или номер телефона от вашего аккаунта — мы отправим код для входа'}
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">{dict.firstName}</label>
-                <input
-                  type="text"
-                  required
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Алишер"
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">{dict.lastName}</label>
-                <input
-                  type="text"
-                  required
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Каримов"
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">
-                  {dict.birthDate} ({age >= 0 && age < 120 ? `${age} лет` : '—'})
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">{dict.gender}</label>
-                <select
-                  value={gender}
-                  onChange={(e) =>
-                    setGender(e.target.value as 'male' | 'female' | 'unspecified')
-                  }
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
-                >
-                  <option value="male">{dict.male}</option>
-                  <option value="female">{dict.female}</option>
-                  <option value="unspecified">{dict.unspecified}</option>
-                </select>
-              </div>
-            </div>
-
-            {isUnder13 && (
-              <div className="p-3.5 rounded-2xl bg-[#FF2D6F]/15 border border-[#FF2D6F]/40 flex items-center gap-3 text-sm text-[#FF7DA6]">
-                <AlertTriangle className="w-5 h-5 shrink-0 text-[#FF2D6F]" />
-                <span>{dict.under13Blocked}</span>
-              </div>
-            )}
-
-            {isUnder18 && (
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs text-amber-200">
-                <div className="flex items-center gap-2 font-medium">
-                  <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>{dict.under18Warning}</span>
+            {authMode === 'register' && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">{dict.firstName}</label>
+                    <input
+                      type="text"
+                      required
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Алишер"
+                      className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">{dict.lastName}</label>
+                    <input
+                      type="text"
+                      required
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Каримов"
+                      className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
+                    />
+                  </div>
                 </div>
-                <label className="flex items-center gap-2.5 cursor-pointer pt-1">
-                  <input
-                    type="checkbox"
-                    checked={parentalConsent}
-                    onChange={(e) => setParentalConsent(e.target.checked)}
-                    className="w-4 h-4 accent-[#00E5FF]"
-                  />
-                  <span>{dict.parentalConsentLabel}</span>
-                </label>
-              </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">
+                      {dict.birthDate} ({age >= 0 && age < 120 ? `${age} лет` : '—'})
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1.5">{dict.gender}</label>
+                    <select
+                      value={gender}
+                      onChange={(e) =>
+                        setGender(e.target.value as 'male' | 'female' | 'unspecified')
+                      }
+                      className="w-full h-11 px-3.5 rounded-xl bg-[#1C1C1E] border border-white/10 text-sm text-white focus:outline-none focus:border-[#00E5FF]"
+                    >
+                      <option value="male">{dict.male}</option>
+                      <option value="female">{dict.female}</option>
+                      <option value="unspecified">{dict.unspecified}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {isUnder13 && (
+                  <div className="p-3.5 rounded-2xl bg-[#FF2D6F]/15 border border-[#FF2D6F]/40 flex items-center gap-3 text-sm text-[#FF7DA6]">
+                    <AlertTriangle className="w-5 h-5 shrink-0 text-[#FF2D6F]" />
+                    <span>{dict.under13Blocked}</span>
+                  </div>
+                )}
+
+                {isUnder18 && (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs text-amber-200">
+                    <div className="flex items-center gap-2 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>{dict.under18Warning}</span>
+                    </div>
+                    <label className="flex items-center gap-2.5 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={parentalConsent}
+                        onChange={(e) => setParentalConsent(e.target.checked)}
+                        className="w-4 h-4 accent-[#00E5FF]"
+                      />
+                      <span>{dict.parentalConsentLabel}</span>
+                    </label>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Contact Method Toggle */}
@@ -449,27 +597,29 @@ export function OnboardingFlow({
               )}
             </div>
 
-            {/* Legal Checkboxes */}
-            <div className="space-y-2.5 pt-1 text-xs text-zinc-300">
-              <label className="flex items-center gap-3 cursor-pointer min-h-[32px]">
-                <input
-                  type="checkbox"
-                  checked={acceptedTerms}
-                  onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  className="w-4 h-4 accent-[#00E5FF]"
-                />
-                <span>{dict.acceptTerms}</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer min-h-[32px]">
-                <input
-                  type="checkbox"
-                  checked={acceptedPrivacy}
-                  onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-                  className="w-4 h-4 accent-[#00E5FF]"
-                />
-                <span>{dict.acceptPrivacy}</span>
-              </label>
-            </div>
+            {/* Legal Checkboxes (Registration only) */}
+            {authMode === 'register' && (
+              <div className="space-y-2.5 pt-1 text-xs text-zinc-300">
+                <label className="flex items-center gap-3 cursor-pointer min-h-[32px]">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    className="w-4 h-4 accent-[#00E5FF]"
+                  />
+                  <span>{dict.acceptTerms}</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer min-h-[32px]">
+                  <input
+                    type="checkbox"
+                    checked={acceptedPrivacy}
+                    onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                    className="w-4 h-4 accent-[#00E5FF]"
+                  />
+                  <span>{dict.acceptPrivacy}</span>
+                </label>
+              </div>
+            )}
 
             {error && (
               <div className="text-xs text-[#FF2D6F] bg-[#FF2D6F]/10 border border-[#FF2D6F]/30 rounded-xl px-3.5 py-2.5">
@@ -480,14 +630,18 @@ export function OnboardingFlow({
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 type="submit"
-                disabled={loading || isUnder13}
+                disabled={loading || (authMode === 'register' && isUnder13)}
                 className="flex-1 h-12 rounded-2xl bg-[#00E5FF] text-black font-semibold text-sm hover:bg-[#33ECFF] disabled:opacity-40 transition-all"
               >
-                {loading ? '...' : dict.sendCode}
+                {loading
+                  ? '...'
+                  : authMode === 'login'
+                    ? 'Получить код для входа'
+                    : dict.sendCode}
               </button>
               <button
                 type="button"
-                disabled={loading || isUnder13}
+                disabled={loading || (authMode === 'register' && isUnder13)}
                 onClick={handleGoogleSignIn}
                 className="flex-1 h-12 rounded-2xl bg-[#1C1C1E] border border-white/15 text-white font-medium text-sm hover:bg-white/10 disabled:opacity-40 transition-all"
               >

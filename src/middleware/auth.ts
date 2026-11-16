@@ -1,7 +1,14 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Request, Response, NextFunction } from 'express';
 import { adminAuth } from '../lib/firebase-admin.ts';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+  projectId: string;
+  appId: string;
+};
 
 export interface AuthUserPayload {
   uid: string;
@@ -38,7 +45,9 @@ export function verifySessionToken(token: string): AuthUserPayload | null {
     .createHmac('sha256', SESSION_SECRET)
     .update(data)
     .digest('base64url');
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
     return null;
   }
   try {
@@ -52,6 +61,44 @@ export function verifySessionToken(token: string): AuthUserPayload | null {
     return { uid: parsed.uid, email: parsed.email };
   } catch {
     return null;
+  }
+}
+
+export function signOtpToken(target: string, code: string): string {
+  const data = Buffer.from(
+    JSON.stringify({ target, code, exp: Date.now() + 10 * 60 * 1000 }),
+  ).toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(`otp:${data}`)
+    .digest('base64url');
+  return `otp_${data}.${sig}`;
+}
+
+export function verifyOtpToken(token: string, target: string, code: string): boolean {
+  if (!token || !token.startsWith('otp_')) return false;
+  const raw = token.slice(4);
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx === -1) return false;
+  const data = raw.slice(0, dotIdx);
+  const sig = raw.slice(dotIdx + 1);
+  const expectedSig = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(`otp:${data}`)
+    .digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    if (typeof parsed.exp !== 'number' || parsed.exp < Date.now()) {
+      return false;
+    }
+    return parsed.target === target && parsed.code === code;
+  } catch {
+    return false;
   }
 }
 

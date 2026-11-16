@@ -23,6 +23,7 @@ import {
   SkipForward,
   Sliders,
   Smile,
+  Smartphone,
   Sparkles,
   Type as TypeIcon,
   Undo2,
@@ -31,7 +32,7 @@ import {
 } from 'lucide-react';
 import { createClipFromMedia } from '../data/templates.ts';
 import { t } from '../data/i18n.ts';
-import { apiFetch } from '../lib/api.ts';
+import { apiFetch, getAuthToken } from '../lib/api.ts';
 import { audioEngine } from '../lib/audioEngine.ts';
 import {
   getProjectDurationMs,
@@ -50,6 +51,7 @@ import type {
 import { EditorTimeline, type SelectedItemRef } from './EditorTimeline.tsx';
 import { EditorToolPanel, type EditorToolTab } from './EditorToolPanel.tsx';
 import { ExportPublishModal } from './ExportPublishModal.tsx';
+import { MediaLibraryModal, type ImportedMediaResult } from './MediaLibraryModal.tsx';
 
 interface Props {
   user: UserProfile;
@@ -92,12 +94,21 @@ export function VideoEditor({
 
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const currentTimeMsRef = useRef(0);
-  currentTimeMsRef.current = currentTimeMs;
 
   const [playing, setPlaying] = useState(autoPlay);
   const playingRef = useRef(autoPlay);
   playingRef.current = playing;
+
   const [showGuides, setShowGuides] = useState(false);
+  const showGuidesRef = useRef(false);
+  showGuidesRef.current = showGuides;
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const userPlanRef = useRef(user.plan);
+  userPlanRef.current = user.plan;
+
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
 
   const [activeTab, setActiveTab] = useState<EditorToolTab>('edit');
@@ -111,6 +122,7 @@ export function VideoEditor({
   const [exportModalMode, setExportModalMode] = useState<'export' | 'publish' | null>(
     initialPublishOpen ? 'publish' : null,
   );
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [aiWishOpen, setAiWishOpen] = useState(false);
   const [aiWishInput, setAiWishInput] = useState('');
   const [aiWishBusy, setAiWishBusy] = useState(false);
@@ -120,6 +132,8 @@ export function VideoEditor({
   const mediaCacheRef = useRef<Map<string, MediaCacheEntry>>(new Map());
   const addMediaInputRef = useRef<HTMLInputElement | null>(null);
   const totalDurationMs = useMemo(() => getProjectDurationMs(state), [state]);
+  const totalDurationMsRef = useRef(totalDurationMs);
+  totalDurationMsRef.current = totalDurationMs;
 
   // Preload all clip & custom sticker media URLs into HTMLImageElement / HTMLVideoElement cache
   useEffect(() => {
@@ -200,61 +214,135 @@ export function VideoEditor({
     setState(next);
   };
 
-  // Sync <video> & audio engine with editor playback state
-  useEffect(() => {
-    for (const entry of mediaCacheRef.current.values()) {
-      if (entry.kind === 'video') {
-        const vid = entry.el as HTMLVideoElement;
-        if (playing) {
-          void vid.play().catch(() => {});
-        } else {
-          vid.pause();
+  const syncVideosToTime = useCallback((targetMs: number, shouldPlay: boolean) => {
+    const cache = mediaCacheRef.current;
+    const activeSrcs = new Map<string, VideoClip>();
+    for (const clip of stateRef.current.clips) {
+      if (clip.type === 'video' && targetMs >= clip.startMs && targetMs <= clip.startMs + clip.durationMs) {
+        if (!activeSrcs.has(clip.src)) {
+          activeSrcs.set(clip.src, clip);
         }
       }
     }
+
+    for (const [src, entry] of cache.entries()) {
+      if (entry.kind !== 'video') continue;
+      const vid = entry.el as HTMLVideoElement;
+      const activeClipForSrc = activeSrcs.get(src);
+      if (activeClipForSrc) {
+        let localSec =
+          ((targetMs - activeClipForSrc.startMs) * (activeClipForSrc.speed || 1) +
+            activeClipForSrc.trimStartMs) /
+          1000;
+        if (Number.isFinite(vid.duration) && vid.duration > 0.05) {
+          localSec = ((localSec % vid.duration) + vid.duration) % vid.duration;
+          if (activeClipForSrc.reverse) {
+            localSec = Math.max(0, vid.duration - localSec);
+          }
+        }
+        try {
+          vid.playbackRate = Math.max(0.25, Math.min(4, activeClipForSrc.speed || 1));
+        } catch {
+          // ignore
+        }
+        if (Math.abs((vid.currentTime || 0) - localSec) > 0.12) {
+          try {
+            vid.currentTime = Math.max(0, localSec);
+          } catch {
+            // ignore unready video seek
+          }
+        }
+        if (shouldPlay && !activeClipForSrc.reverse) {
+          if (vid.paused) void vid.play().catch(() => {});
+        } else if (!vid.paused) {
+          vid.pause();
+        }
+      } else if (!vid.paused) {
+        vid.pause();
+      }
+    }
+  }, []);
+
+  const seekToTime = useCallback(
+    (ms: number) => {
+      const clamped = Math.max(0, Math.min(totalDurationMsRef.current, ms));
+      playingRef.current = false;
+      setPlaying(false);
+      currentTimeMsRef.current = clamped;
+      setCurrentTimeMs(clamped);
+      syncVideosToTime(clamped, false);
+    },
+    [syncVideosToTime],
+  );
+
+  // Sync <video> & audio engine on Play/Pause transitions (stable dependency [playing])
+  useEffect(() => {
+    syncVideosToTime(currentTimeMsRef.current, playing);
     if (playing) {
-      audioEngine.playTimelineTracks(state.audioClips, currentTimeMsRef.current);
+      audioEngine.playTimelineTracks(stateRef.current.audioClips, currentTimeMsRef.current);
     } else {
       audioEngine.stopAll();
     }
     return () => {
       audioEngine.stopAll();
     };
-  }, [playing, state.audioClips]);
+  }, [playing, syncVideosToTime]);
 
-  // Playback & Canvas Render Loop
+  // Smooth Forward-Only Playback rAF Loop (never resets on currentTimeMs changes!)
   useEffect(() => {
+    if (!playing) return;
     let rafId = 0;
     let lastTick = performance.now();
+    let lastUiSync = 0;
 
     const tick = (now: number) => {
-      const dt = now - lastTick;
+      if (!playingRef.current) return;
+      const dt = Math.min(80, Math.max(0, now - lastTick));
       lastTick = now;
 
-      if (playing) {
-        setCurrentTimeMs((tMs) => {
-          const next = tMs + dt;
-          if (next >= totalDurationMs) {
-            setPlaying(false);
-            return 0;
-          }
-          return next;
-        });
-      }
+      let nextTime = currentTimeMsRef.current + dt;
+      if (nextTime >= totalDurationMsRef.current) {
+        nextTime = 0;
+        currentTimeMsRef.current = 0;
+        playingRef.current = false;
+        setPlaying(false);
+        setCurrentTimeMs(0);
+        syncVideosToTime(0, false);
 
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
         if (ctx) {
           renderFrameToCanvas({
             ctx,
-            state,
-            timeMs: currentTimeMs,
+            state: stateRef.current,
+            timeMs: 0,
             mediaCache: mediaCacheRef.current,
-            showGuides,
-            showWatermark: user.plan === 'free_15s',
+            showGuides: showGuidesRef.current,
+            showWatermark: userPlanRef.current === 'free_15s',
+            isPlaying: false,
           });
         }
+        return;
+      }
+
+      currentTimeMsRef.current = nextTime;
+      if (now - lastUiSync >= 33) {
+        lastUiSync = now;
+        setCurrentTimeMs(Math.round(nextTime));
+      }
+
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (ctx) {
+        renderFrameToCanvas({
+          ctx,
+          state: stateRef.current,
+          timeMs: nextTime,
+          mediaCache: mediaCacheRef.current,
+          showGuides: showGuidesRef.current,
+          showWatermark: userPlanRef.current === 'free_15s',
+          isPlaying: true,
+        });
       }
 
       rafId = requestAnimationFrame(tick);
@@ -262,7 +350,26 @@ export function VideoEditor({
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [playing, currentTimeMs, totalDurationMs, state, showGuides, user.plan]);
+  }, [playing, syncVideosToTime]);
+
+  // Static frame redraw when paused and edits/scrub happen
+  useEffect(() => {
+    if (playing) return;
+    currentTimeMsRef.current = currentTimeMs;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (ctx) {
+      renderFrameToCanvas({
+        ctx,
+        state,
+        timeMs: currentTimeMs,
+        mediaCache: mediaCacheRef.current,
+        showGuides,
+        showWatermark: user.plan === 'free_15s',
+        isPlaying: false,
+      });
+    }
+  }, [playing, currentTimeMs, state, showGuides, user.plan]);
 
   const handleSaveCloud = async () => {
     setSaving(true);
@@ -471,24 +578,33 @@ export function VideoEditor({
           reverse?: boolean;
           rotation?: number;
           flipH?: boolean;
+          scale?: number;
           volume?: number;
+          clipDurationMs?: number;
           filterPreset?: string;
           brightness?: number;
           contrast?: number;
           saturation?: number;
           vignette?: number;
           transitionIn?: string;
+          animIn?: string;
+          backgroundType?: 'color' | 'blur' | 'gradient';
+          backgroundColor?: string;
           addText?: {
             text: string;
             color?: string;
             isMarquee?: boolean;
             position?: 'top' | 'center' | 'bottom';
           };
-          addEffect?: 'chromatic' | 'vhs' | 'film_burn' | 'sparkle' | 'neon';
-          addAudio?: 'synthwave' | 'lofi' | 'trap' | 'ambient';
+          addEffect?: 'chromatic' | 'vhs' | 'film_burn' | 'sparkle' | 'neon' | 'glitch' | 'shake' | 'blur' | 'soft_glow';
+          addAudio?: string;
           addSticker?: string;
           bgRemove?: boolean;
           retouchSmooth?: number;
+          removeTexts?: boolean;
+          removeEffects?: boolean;
+          removeAudio?: boolean;
+          generateNewScenePrompt?: string;
         };
       }>('/api/ai/edit-command', {
         method: 'POST',
@@ -501,11 +617,38 @@ export function VideoEditor({
       });
 
       const p = res.plan;
+      let generatedClip: VideoClip | null = null;
+      if (p.generateNewScenePrompt) {
+        try {
+          const genRes = await apiFetch<{ videoUrl: string }>('/api/ai/generate-video', {
+            method: 'POST',
+            body: JSON.stringify({
+              prompt: p.generateNewScenePrompt,
+              refinement: prompt,
+              aspectRatio: p.aspectRatio || state.aspectRatio,
+              durationSec: 6,
+              style: 'cinematic',
+            }),
+          });
+          if (genRes.videoUrl) {
+            generatedClip = createClipFromMedia({
+              type: 'video',
+              src: genRes.videoUrl,
+              name: `AI: ${p.generateNewScenePrompt.slice(0, 22)}`,
+              startMs: totalDurationMs,
+              durationMs: 6000,
+            });
+          }
+        } catch {
+          // Proceed with edit actions even if quota reached
+        }
+      }
+
       const targetClipId =
         (selected?.kind === 'clip' ? selected.id : undefined) || state.clips[0]?.id;
 
       handleStateChange((prev) => {
-        const nextClips = prev.clips.map((c) => {
+        let nextClips = prev.clips.map((c) => {
           if (c.id !== targetClipId) return c;
           return {
             ...c,
@@ -514,8 +657,13 @@ export function VideoEditor({
             rotation:
               typeof p.rotation === 'number' ? (c.rotation + p.rotation) % 360 : c.rotation,
             flipH: typeof p.flipH === 'boolean' ? p.flipH : c.flipH,
+            scale: typeof p.scale === 'number' ? Math.max(0.2, Math.min(3, p.scale)) : c.scale,
             volume: typeof p.volume === 'number' ? p.volume : c.volume,
+            muted: p.volume === 0 ? true : c.muted,
+            durationMs:
+              typeof p.clipDurationMs === 'number' ? p.clipDurationMs : c.durationMs,
             transitionIn: p.transitionIn ?? c.transitionIn,
+            animIn: p.animIn ?? c.animIn,
             bgRemove: typeof p.bgRemove === 'boolean' ? p.bgRemove : c.bgRemove,
             retouch:
               typeof p.retouchSmooth === 'number'
@@ -533,8 +681,11 @@ export function VideoEditor({
             },
           };
         });
+        if (generatedClip) {
+          nextClips = [...nextClips, generatedClip];
+        }
 
-        const nextTexts = [...prev.texts];
+        const nextTexts = p.removeTexts ? [] : [...prev.texts];
         if (p.addText?.text) {
           const yPos =
             p.addText.position === 'top' ? 20 : p.addText.position === 'bottom' ? 82 : 50;
@@ -564,7 +715,7 @@ export function VideoEditor({
           });
         }
 
-        const nextEffects = [...prev.effects];
+        const nextEffects = p.removeEffects ? [] : [...prev.effects];
         if (p.addEffect) {
           nextEffects.push({
             id: `ai_fx_${Date.now()}`,
@@ -577,7 +728,7 @@ export function VideoEditor({
           });
         }
 
-        const nextAudio = [...prev.audioClips];
+        const nextAudio = p.removeAudio ? [] : [...prev.audioClips];
         if (p.addAudio) {
           nextAudio.push({
             id: `ai_aud_${Date.now()}`,
@@ -618,6 +769,14 @@ export function VideoEditor({
           ...prev,
           aspectRatio: p.aspectRatio ?? prev.aspectRatio,
           resolution: p.resolution ?? prev.resolution,
+          background:
+            p.backgroundType || p.backgroundColor
+              ? {
+                  ...prev.background,
+                  type: p.backgroundType ?? prev.background.type,
+                  color: p.backgroundColor ?? prev.background.color,
+                }
+              : prev.background,
           clips: nextClips,
           texts: nextTexts,
           effects: nextEffects,
@@ -626,7 +785,7 @@ export function VideoEditor({
         };
       });
 
-      setAiWishStatus(p.reply);
+      setAiWishStatus(generatedClip ? `Сцена добавлена! ${p.reply}` : p.reply);
       setAiWishInput('');
     } catch (err) {
       setAiWishStatus(err instanceof Error ? err.message : 'Ошибка ИИ-команды');
@@ -666,24 +825,56 @@ export function VideoEditor({
         ref={addMediaInputRef}
         type="file"
         multiple
-        accept="video/*,image/*"
+        accept="video/*,image/*,.mp4,.mov,.m4v,.3gp,.mkv,.avi,.webm,.heic,.heif,.jpg,.jpeg,.png,.webp"
         className="hidden"
-        onChange={(e) => {
+        onChange={async (e) => {
           const files = e.target.files;
           if (files && files.length > 0) {
+            const token = getAuthToken();
             let cursor = totalDurationMs;
-            const added = Array.from(files).map((f) => {
-              const dur = f.type.startsWith('video/') ? 7000 : 5000;
-              const c = createClipFromMedia({
-                type: f.type.startsWith('video/') ? 'video' : 'image',
-                src: URL.createObjectURL(f),
-                name: f.name,
-                startMs: cursor,
-                durationMs: dur,
-              });
+            const added: VideoClip[] = [];
+            for (const f of Array.from(files)) {
+              const lower = f.name.toLowerCase();
+              const isVid = f.type.startsWith('video/') || /\.(mp4|mov|m4v|3gp|mkv|avi|webm)$/.test(lower);
+              const needsTranscode = /\.(mov|3gp|mkv|avi|heic|heif|m4v)$/.test(lower);
+              let url = URL.createObjectURL(f);
+              let resolvedType: 'video' | 'image' = isVid ? 'video' : 'image';
+              if (needsTranscode && token) {
+                try {
+                  const buf = await f.arrayBuffer();
+                  const resp = await fetch('/api/media/import', {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      'Content-Type': 'application/octet-stream',
+                      'X-Media-Name': encodeURIComponent(f.name),
+                      'X-Media-Mime': f.type || 'application/octet-stream',
+                    },
+                    body: buf,
+                  });
+                  if (resp.ok) {
+                    const parsed = (await resp.json()) as { url?: string; mediaType?: 'video' | 'image' };
+                    if (parsed.url) url = parsed.url;
+                    if (parsed.mediaType === 'video' || parsed.mediaType === 'image') {
+                      resolvedType = parsed.mediaType;
+                    }
+                  }
+                } catch {
+                  // fallback local blob url
+                }
+              }
+              const dur = resolvedType === 'video' ? 7000 : 5000;
+              added.push(
+                createClipFromMedia({
+                  type: resolvedType,
+                  src: url,
+                  name: f.name,
+                  startMs: cursor,
+                  durationMs: dur,
+                }),
+              );
               cursor += dur;
-              return c;
-            });
+            }
             handleStateChange((prev) => ({ ...prev, clips: [...prev.clips, ...added] }));
           }
           e.target.value = '';
@@ -859,11 +1050,20 @@ export function VideoEditor({
                   type="button"
                   onClick={() => addMediaInputRef.current?.click()}
                   className="h-8 px-2.5 rounded-lg bg-[#1B1B1F] hover:bg-[#25252B] text-xs text-zinc-200 flex items-center gap-1.5 hover:text-[#00E5FF]"
-                  title="Добавить видео или фото"
+                  title="Добавить видео или фото с устройства"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <Film className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Клип</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMediaModalOpen(true)}
+                  className="h-8 px-2.5 rounded-lg bg-[#1B1B1F] hover:bg-[#25252B] text-xs text-zinc-200 flex items-center gap-1.5 hover:text-[#00E5FF]"
+                  title="Открыть медиатеку (для любого телефона)"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-[#00E5FF]" />
+                  <span className="hidden md:inline">Медиатека</span>
                 </button>
                 <button
                   type="button"
@@ -878,10 +1078,7 @@ export function VideoEditor({
               <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setPlaying(false);
-                    setCurrentTimeMs(0);
-                  }}
+                  onClick={() => seekToTime(0)}
                   className="w-7 h-7 rounded-md text-zinc-400 hover:text-white flex items-center justify-center"
                   title="В начало"
                 >
@@ -901,10 +1098,7 @@ export function VideoEditor({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setPlaying(false);
-                    setCurrentTimeMs(Math.max(0, totalDurationMs - 50));
-                  }}
+                  onClick={() => seekToTime(Math.max(0, totalDurationMs - 50))}
                   className="w-7 h-7 rounded-md text-zinc-400 hover:text-white flex items-center justify-center"
                   title="В конец"
                 >
@@ -993,10 +1187,7 @@ export function VideoEditor({
           totalDurationMs={totalDurationMs}
           selected={selected}
           onSelect={setSelected}
-          onSeek={(ms) => {
-            setPlaying(false);
-            setCurrentTimeMs(ms);
-          }}
+          onSeek={seekToTime}
           onUpdateItemTiming={handleUpdateTiming}
           onAddMarker={handleAddMarker}
           onSplitClip={handleQuickSplit}
@@ -1083,6 +1274,56 @@ export function VideoEditor({
           onClose={() => setExportModalMode(null)}
           onSaveCloud={handleSaveCloud}
           onUserUpdated={onUserUpdated}
+        />
+      )}
+
+      {/* Universal Mobile Media Library Modal */}
+      {mediaModalOpen && (
+        <MediaLibraryModal
+          onClose={() => setMediaModalOpen(false)}
+          onSelectMedia={(items: ImportedMediaResult[]) => {
+            handleStateChange((prev) => {
+              let cursor = getProjectDurationMs(prev);
+              const addedClips: VideoClip[] = [];
+              const addedAudio: AudioClip[] = [];
+              for (const item of items) {
+                if (item.kind === 'audio') {
+                  addedAudio.push({
+                    id: `aud_lib_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                    track: 'A1',
+                    name: item.name,
+                    src: item.src,
+                    synthPreset: item.synthPreset,
+                    startMs: currentTimeMsRef.current,
+                    durationMs: item.durationMs,
+                    volume: 85,
+                    fadeInMs: 250,
+                    fadeOutMs: 500,
+                    voiceEffect: 'none',
+                    denoise: false,
+                    eq: [0, 0, 0, 0, 0],
+                    beatSynced: true,
+                  });
+                } else {
+                  addedClips.push(
+                    createClipFromMedia({
+                      type: item.kind,
+                      src: item.src,
+                      name: item.name,
+                      startMs: cursor,
+                      durationMs: item.durationMs,
+                    }),
+                  );
+                  cursor += item.durationMs;
+                }
+              }
+              return {
+                ...prev,
+                clips: [...prev.clips, ...addedClips],
+                audioClips: [...prev.audioClips, ...addedAudio],
+              };
+            });
+          }}
         />
       )}
     </div>

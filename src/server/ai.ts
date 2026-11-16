@@ -311,7 +311,19 @@ function sanitizeSvg(rawSvg: string, w: number, h: number): string | null {
   return svg;
 }
 
-function buildKeywordSceneSvg(
+function resolvePaletteColor(p: string, fallback: string): string {
+  if (/зелен|зелён|emerald|green/.test(p)) return '#22c55e';
+  if (/красн|ал[оы]|рубин|red|crimson/.test(p)) return '#ef4444';
+  if (/золот|ж[её]лт|янтар|gold|yellow/.test(p)) return '#facc15';
+  if (/оранж|рыж|orange/.test(p)) return '#fb923c';
+  if (/розов|малин|pink|rose/.test(p)) return '#ff2d6f';
+  if (/фиолет|сирен|пурпур|purple|violet/.test(p)) return '#a855f7';
+  if (/синий|синяя|синее|син|голуб|неон|cyan|blue/.test(p)) return '#00e5ff';
+  if (/бел|снеж|white/.test(p)) return '#f8fafc';
+  return fallback;
+}
+
+function buildRichSceneSvg(
   prompt: string,
   w: number,
   h: number,
@@ -319,38 +331,62 @@ function buildKeywordSceneSvg(
   style = 'cinematic',
 ): string {
   const p = prompt.toLowerCase();
-  const isSpace =
-    /космос|марс|луна|планет|звезд|ракет|галактик|space|mars|moon|planet|rocket|star|galaxy/.test(p);
+  const isSpace = /космос|марс|луна|планет|звезд|ракет|галактик|space|mars|moon|planet|rocket|star|galaxy/.test(p);
+  const isCity = /город|неон|киберпанк|улиц|ноч|мегаполис|city|neon|cyberpunk|street|tokyo/.test(p);
+  const isOcean = /море|океан|пляж|волн|корабл|вода|озер|ocean|sea|beach|wave|water/.test(p);
+  const isNature = /гор|лес|дерев|закат|природ|поля|цвет|парк|mountain|forest|sunset|nature|park/.test(p);
+  const isStadium = /стадион|арен|футбол|спорт|матч|stadium|arena|soccer|football|sport/.test(p);
+
+  const isDragon = /дракон|динозавр|монстр|dragon|monster/.test(p);
   const isCat = /кот|кошк|котён|cat|kitten/.test(p);
-  const isCar = /машин|авто|дрифт|гонк|тачк|car|drift|race|sportscar/.test(p);
-  const isCity = /город|неон|киберпанк|улиц|ноч|city|neon|cyberpunk|street/.test(p);
-  const isOcean = /море|океан|пляж|волн|корабл|вода|ocean|sea|beach|wave/.test(p);
-  const isNature = /гор|лес|дерев|закат|природ|mountain|forest|sunset|nature|sun/.test(p);
+  const isDog = /собак|щенок|пес|пёс|dog|puppy/.test(p);
+  const isWolfLion = /волк|лев|тигр|медведь|wolf|lion|tiger|bear/.test(p);
+  const isCar = /машин|авто|дрифт|гонк|тачк|спорткар|car|drift|race|sportscar/.test(p);
+  const isMoto = /мото|байк|мопед|moto|bike|motorcycle/.test(p);
+  const isPlane = /самол[её]т|вертол[её]т|plane|jet|helicopter/.test(p);
+  const isRocket = /ракет|шаттл|корабль.*косм|rocket|spaceship/.test(p);
+  const isRobot = /робот|киборг|андроид|мех|robot|cyborg|android|ai/.test(p);
+  const isPerson = /девушк|парен|человек|танц|певец|блогер|герой|самурай|girl|boy|person|dancer|samurai/.test(p);
+  const isFootball = /мяч|футбол|баскетбол|ball|football|soccer/.test(p);
+  const isMusic = /наушник|музык|гитар|диджей|микрофон|music|headphones|dj|guitar/.test(p);
+  const isCoffeeFood = /кофе|чашк|еда|пицц|бургер|торт|coffee|food|pizza|burger|cake/.test(p);
+  const isCrown = /корон|корол|цар|принц|crown|king|queen/.test(p);
+  const isFlower = /цвет|роз|сакур|тюльпан|flower|rose|sakura/.test(p);
   const isLove = /любов|сердц|романт|love|heart/.test(p);
 
+  const hasRain = /дожд|ливень|капл|rain/.test(p);
+  const hasSnow = /снег|зима|мороз|метел|snow|winter/.test(p);
+  const hasFire = /огон|плам|пожар|вулкан|кост[её]р|fire|flame|lava/.test(p);
+  const hasLightning = /молни|гроз|гром|шторм|lightning|thunder|storm/.test(p);
+
+  const heroColor = resolvePaletteColor(p, '#00e5ff');
+  const accentColor = hasFire ? '#fb923c' : isLove ? '#ff2d6f' : '#ff2d6f';
+
   const skyTop = isSpace
-    ? '#040717'
+    ? '#030614'
     : isCity
       ? '#09071a'
       : isOcean
-        ? '#072a4f'
+        ? '#062c4d'
         : isNature
           ? '#1e1b4b'
-          : style === 'anime'
-            ? '#240b36'
-            : '#091124';
+          : isStadium
+            ? '#0a192f'
+            : style === 'anime'
+              ? '#240b36'
+              : '#0b1020';
   const skyBot = isSpace
-    ? '#3a1026'
+    ? '#2b0f26'
     : isCity
       ? '#260b3d'
       : isOcean
-        ? '#0e7490'
+        ? '#0891b2'
         : isNature
-          ? '#db2777'
-          : '#1b1038';
+          ? '#be185d'
+          : '#161b33';
 
-  const shift = (sceneIdx % 3) * 40;
-  const cx = Math.round(w * 0.5);
+  const shiftX = sceneIdx === 1 ? -18 : sceneIdx === 2 ? 18 : 0;
+  const cx = Math.round(w * 0.5) + shiftX;
   const cy = Math.round(h * 0.48);
 
   const elements: string[] = [
@@ -361,7 +397,7 @@ function buildKeywordSceneSvg(
         <stop offset="100%" stop-color="#09090b"/>
       </linearGradient>
       <radialGradient id="glow" cx="50%" cy="45%" r="55%">
-        <stop offset="0%" stop-color="${isSpace ? '#ff6b35' : '#00e5ff'}" stop-opacity="0.45"/>
+        <stop offset="0%" stop-color="${heroColor}" stop-opacity="0.38"/>
         <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
       </radialGradient>
     </defs>
@@ -369,93 +405,213 @@ function buildKeywordSceneSvg(
     <rect width="${w}" height="${h}" fill="url(#glow)"/>`,
   ];
 
-  // Stars for night / space / city
+  // Background stars or atmospheric particles
   if (isSpace || isCity || (!isOcean && !isNature)) {
     for (let i = 0; i < 24; i++) {
-      const sx = ((i * 79 + sceneIdx * 43) % (w - 40)) + 20;
-      const sy = ((i * 53 + sceneIdx * 29) % Math.round(h * 0.58)) + 20;
+      const sx = ((i * 83 + sceneIdx * 47) % (w - 30)) + 15;
+      const sy = ((i * 59 + sceneIdx * 31) % Math.round(h * 0.58)) + 15;
       const sr = (i % 3) + 1;
-      elements.push(`<circle cx="${sx}" cy="${sy}" r="${sr}" fill="#ffffff" opacity="${0.4 + (i % 5) * 0.12}"/>`);
+      elements.push(`<circle cx="${sx}" cy="${sy}" r="${sr}" fill="#ffffff" opacity="${0.35 + (i % 5) * 0.12}"/>`);
     }
   }
 
+  // Settings layers
   if (isSpace) {
-    // Mars / glowing planet
-    const px = Math.round(w * 0.68) - shift * 0.5;
-    const py = Math.round(h * 0.28);
-    const pr = Math.round(Math.min(w, h) * 0.22);
+    const px = Math.round(w * 0.72) - shiftX;
+    const py = Math.round(h * 0.25);
+    const pr = Math.round(Math.min(w, h) * 0.18);
     elements.push(`
-      <circle cx="${px}" cy="${py}" r="${pr}" fill="#e25822"/>
-      <circle cx="${px - pr * 0.25}" cy="${py - pr * 0.15}" r="${pr * 0.18}" fill="#b83b14"/>
-      <circle cx="${px + pr * 0.3}" cy="${py + pr * 0.25}" r="${pr * 0.12}" fill="#c9461a"/>
-      <path d="M ${cx - 35} ${cy + 150} Q ${cx} ${cy + 260} ${cx + 35} ${cy + 150}" fill="#f59e0b" opacity="0.85"/>
+      <circle cx="${px}" cy="${py}" r="${pr}" fill="${resolvePaletteColor(p, '#ea580c')}"/>
+      <ellipse cx="${px}" cy="${py}" rx="${pr * 1.45}" ry="${pr * 0.3}" fill="none" stroke="#fde047" stroke-width="4" opacity="0.65"/>
     `);
   }
 
   if (isNature || isOcean) {
-    // Sun & mountains or sea horizon
-    const sunY = Math.round(h * 0.42);
-    elements.push(`<circle cx="${cx}" cy="${sunY}" r="${Math.round(Math.min(w, h) * 0.16)}" fill="#fb7185" opacity="0.9"/>`);
+    const sunY = Math.round(h * 0.36);
+    elements.push(`<circle cx="${cx}" cy="${sunY}" r="${Math.round(Math.min(w, h) * 0.14)}" fill="#fb7185" opacity="0.88"/>`);
     if (isOcean) {
-      elements.push(`<rect x="0" y="${Math.round(h * 0.55)}" width="${w}" height="${h}" fill="#083344"/>`);
-      elements.push(`<path d="M 0 ${Math.round(h * 0.62)} Q ${w * 0.25} ${Math.round(h * 0.58)} ${w * 0.5} ${Math.round(h * 0.62)} T ${w} ${Math.round(h * 0.62)} L ${w} ${h} L 0 ${h} Z" fill="#06b6d4" opacity="0.45"/>`);
+      elements.push(`<rect x="0" y="${Math.round(h * 0.56)}" width="${w}" height="${h}" fill="#083344"/>`);
+      elements.push(`<path d="M 0 ${Math.round(h * 0.62)} Q ${w * 0.25} ${Math.round(h * 0.58)} ${w * 0.5} ${Math.round(h * 0.62)} T ${w} ${Math.round(h * 0.62)} L ${w} ${h} L 0 ${h} Z" fill="#06b6d4" opacity="0.5"/>`);
     } else {
-      elements.push(`<polygon points="0,${h} 0,${Math.round(h * 0.64)} ${Math.round(w * 0.35)},${Math.round(h * 0.46)} ${Math.round(w * 0.72)},${Math.round(h * 0.65)} ${w},${Math.round(h * 0.52)} ${w},${h}" fill="#18181b"/>`);
-      elements.push(`<polygon points="0,${h} ${Math.round(w * 0.2)},${Math.round(h * 0.68)} ${Math.round(w * 0.55)},${Math.round(h * 0.55)} ${w},${Math.round(h * 0.72)} ${w},${h}" fill="#09090b"/>`);
+      elements.push(`<polygon points="0,${h} 0,${Math.round(h * 0.66)} ${Math.round(w * 0.34)},${Math.round(h * 0.48)} ${Math.round(w * 0.72)},${Math.round(h * 0.67)} ${w},${Math.round(h * 0.54)} ${w},${h}" fill="#14532d" opacity="0.7"/>`);
+      elements.push(`<polygon points="0,${h} ${Math.round(w * 0.2)},${Math.round(h * 0.7)} ${Math.round(w * 0.56)},${Math.round(h * 0.57)} ${w},${Math.round(h * 0.74)} ${w},${h}" fill="#09090b"/>`);
     }
+  }
+
+  if (isStadium) {
+    elements.push(`
+      <ellipse cx="${cx}" cy="${Math.round(h * 0.78)}" rx="${w * 0.48}" ry="${h * 0.16}" fill="#15803d" stroke="#ffffff" stroke-width="3"/>
+      <circle cx="${Math.round(w * 0.2)}" cy="${Math.round(h * 0.18)}" r="26" fill="#fef08a" opacity="0.7"/>
+      <circle cx="${Math.round(w * 0.8)}" cy="${Math.round(h * 0.18)}" r="26" fill="#fef08a" opacity="0.7"/>
+    `);
   }
 
   if (isCity) {
-    // Neon skyline
-    const base = Math.round(h * 0.78);
+    const base = Math.round(h * 0.82);
     for (let i = 0; i < 8; i++) {
       const bw = Math.round(w / 7);
-      const bh = 120 + ((i * 67 + sceneIdx * 31) % 220);
+      const bh = 110 + ((i * 71 + sceneIdx * 37) % 210);
       const bx = i * (bw - 4);
-      elements.push(`<rect x="${bx}" y="${base - bh}" width="${bw - 6}" height="${bh + 300}" fill="#0f172a" stroke="#00e5ff" stroke-opacity="0.35" stroke-width="2"/>`);
-      elements.push(`<rect x="${bx + 10}" y="${base - bh + 20}" width="12" height="12" fill="#ff2d6f" opacity="0.8"/>`);
-      elements.push(`<rect x="${bx + 30}" y="${base - bh + 44}" width="12" height="12" fill="#00e5ff" opacity="0.8"/>`);
+      elements.push(`<rect x="${bx}" y="${base - bh}" width="${bw - 6}" height="${bh + 300}" fill="#0f172a" stroke="${heroColor}" stroke-opacity="0.45" stroke-width="2"/>`);
+      elements.push(`<rect x="${bx + 10}" y="${base - bh + 20}" width="10" height="10" fill="#ff2d6f" opacity="0.85"/>`);
+      elements.push(`<rect x="${bx + 28}" y="${base - bh + 42}" width="10" height="10" fill="${heroColor}" opacity="0.85"/>`);
     }
   }
 
-  if (isCar) {
-    // Sleek neon sports car silhouette on perspective road
+  // Hero subjects
+  if (isDragon) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <path d="M -90 20 Q -150 -80 -40 -60 Q -10 -120 35 -55 Q 130 -90 95 25 Q 45 -5 10 40 L -15 80 Z" fill="${heroColor}" opacity="0.92"/>
+        <circle cx="-12" cy="-58" r="7" fill="#fde047"/>
+        <circle cx="16" cy="-58" r="7" fill="#fde047"/>
+        <path d="M 10 -32 L 105 -12 L 55 18 Z" fill="#f97316" opacity="0.85"/>
+      </g>
+    `);
+  } else if (isCar) {
     const roadY = Math.round(h * 0.68);
     elements.push(`
       <polygon points="${cx - 60},${roadY} ${cx + 60},${roadY} ${w},${h} 0,${h}" fill="#18181b"/>
       <line x1="${cx}" y1="${roadY}" x2="${cx}" y2="${h}" stroke="#00e5ff" stroke-width="4" stroke-dasharray="18 14"/>
-      <g transform="translate(${cx + (sceneIdx - 1) * 28}, ${Math.round(h * 0.72)})">
-        <path d="M -110 20 L -85 -28 L -20 -44 L 55 -40 L 105 -8 L 115 20 Z" fill="#1e293b" stroke="#00e5ff" stroke-width="3"/>
-        <circle cx="-65" cy="24" r="22" fill="#09090b" stroke="#ff2d6f" stroke-width="4"/>
-        <circle cx="68" cy="24" r="22" fill="#09090b" stroke="#ff2d6f" stroke-width="4"/>
-        <rect x="88" y="-2" width="22" height="8" rx="4" fill="#fde047"/>
+      <g transform="translate(${cx}, ${Math.round(h * 0.72)})">
+        <path d="M -115 20 L -88 -28 L -20 -46 L 58 -40 L 108 -8 L 118 20 Z" fill="${heroColor}" stroke="#ffffff" stroke-width="2.5"/>
+        <circle cx="-68" cy="24" r="22" fill="#09090b" stroke="#ff2d6f" stroke-width="4"/>
+        <circle cx="70" cy="24" r="22" fill="#09090b" stroke="#ff2d6f" stroke-width="4"/>
+        <rect x="92" y="-2" width="22" height="8" rx="4" fill="#fde047"/>
+      </g>
+    `);
+  } else if (isMoto) {
+    elements.push(`
+      <g transform="translate(${cx}, ${Math.round(h * 0.68)})">
+        <circle cx="-68" cy="22" r="28" fill="#09090b" stroke="${heroColor}" stroke-width="6"/>
+        <circle cx="68" cy="22" r="28" fill="#09090b" stroke="${heroColor}" stroke-width="6"/>
+        <path d="M -68 22 L -15 -34 L 46 -28 L 68 22 L 15 -4 Z" fill="none" stroke="${accentColor}" stroke-width="8"/>
+        <rect x="-25" y="-42" width="54" height="18" rx="8" fill="${heroColor}"/>
+      </g>
+    `);
+  } else if (isRocket) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy}) rotate(${sceneIdx === 1 ? -12 : 12})">
+        <path d="M 0 -110 C 42 -40 42 40 24 80 L -24 80 C -42 40 -42 -40 0 -110 Z" fill="#f8fafc" stroke="${heroColor}" stroke-width="4"/>
+        <polygon points="-28,50 -58,95 -20,82" fill="#ff2d6f"/>
+        <polygon points="28,50 58,95 20,82" fill="#ff2d6f"/>
+        <circle cx="0" cy="-22" r="18" fill="${heroColor}"/>
+        <polygon points="-16,84 0,146 16,84" fill="#f97316"/>
+      </g>
+    `);
+  } else if (isPlane) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy}) rotate(-10)">
+        <ellipse cx="0" cy="0" rx="110" ry="22" fill="#f8fafc"/>
+        <polygon points="-20,-10 30,-90 55,-10" fill="${heroColor}"/>
+        <polygon points="-20,10 30,90 55,10" fill="${heroColor}"/>
+        <polygon points="-95,0 -122,-42 -78,0" fill="#ff2d6f"/>
+      </g>
+    `);
+  } else if (isCat || isDog || isWolfLion) {
+    const furColor = resolvePaletteColor(p, isWolfLion ? '#94a3b8' : '#fb923c');
+    elements.push(`
+      <g transform="translate(${cx}, ${cy + 20})">
+        <ellipse cx="0" cy="72" rx="54" ry="70" fill="${furColor}" opacity="0.92"/>
+        <polygon points="-40,-58 -22,-108 0,-70" fill="${furColor}"/>
+        <polygon points="40,-58 22,-108 0,-70" fill="${furColor}"/>
+        <circle cx="0" cy="-24" r="46" fill="${furColor}"/>
+        <circle cx="-15" cy="-30" r="6" fill="#09090b"/>
+        <circle cx="15" cy="-30" r="6" fill="#09090b"/>
+        <polygon points="-6,-16 6,-16 0,-9" fill="#ff2d6f"/>
+      </g>
+    `);
+  } else if (isRobot) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <rect x="-46" y="-82" width="92" height="72" rx="18" fill="#1e293b" stroke="${heroColor}" stroke-width="4"/>
+        <rect x="-28" y="-56" width="56" height="20" rx="8" fill="${heroColor}"/>
+        <rect x="-58" y="-2" width="116" height="96" rx="18" fill="#0f172a" stroke="#ff2d6f" stroke-width="3"/>
+        <circle cx="0" cy="44" r="18" fill="${heroColor}"/>
+      </g>
+    `);
+  } else if (isFootball) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy + 30})">
+        <circle cx="0" cy="0" r="62" fill="#f8fafc" stroke="#09090b" stroke-width="4"/>
+        <polygon points="0,-24 22,-8 14,18 -14,18 -22,-8" fill="#09090b"/>
+      </g>
+    `);
+  } else if (isMusic) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <path d="M -68 10 A 68 68 0 0 1 68 10" fill="none" stroke="${heroColor}" stroke-width="14" stroke-linecap="round"/>
+        <rect x="-82" y="0" width="28" height="58" rx="12" fill="#ff2d6f"/>
+        <rect x="54" y="0" width="28" height="58" rx="12" fill="#ff2d6f"/>
+      </g>
+    `);
+  } else if (isCoffeeFood) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy + 20})">
+        <path d="M -52 -30 L 52 -30 L 40 58 Q 0 74 -40 58 Z" fill="#f8fafc" stroke="${heroColor}" stroke-width="4"/>
+        <path d="M 48 -14 Q 82 -14 82 14 Q 82 40 44 40" fill="none" stroke="#f8fafc" stroke-width="8"/>
+      </g>
+    `);
+  } else if (isCrown) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <polygon points="-85,45 -98,-48 -42,-4 0,-74 42,-4 98,-48 85,45" fill="#facc15" stroke="#ffffff" stroke-width="4"/>
+      </g>
+    `);
+  } else if (isFlower) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <rect x="-5" y="0" width="10" height="130" fill="#22c55e"/>
+        <circle cx="0" cy="-42" r="32" fill="#ff2d6f"/>
+        <circle cx="38" cy="-12" r="30" fill="#fb7185"/>
+        <circle cx="-38" cy="-12" r="30" fill="#fb7185"/>
+        <circle cx="0" cy="-12" r="20" fill="#facc15"/>
+      </g>
+    `);
+  } else if (isPerson) {
+    elements.push(`
+      <g transform="translate(${cx}, ${cy})">
+        <circle cx="0" cy="-64" r="30" fill="#fde68a"/>
+        <path d="M -48 64 L -32 -22 L 32 -22 L 48 64 Z" fill="${heroColor}"/>
+      </g>
+    `);
+  } else if (isLove) {
+    elements.push(`
+      <path d="M ${cx} ${cy + 75} C ${cx + 150} ${cy - 40}, ${cx + 100} ${cy - 160}, ${cx} ${cy - 65} C ${cx - 100} ${cy - 160}, ${cx - 150} ${cy - 40}, ${cx} ${cy + 75} Z" fill="#ff2d6f" opacity="0.9"/>
+    `);
+  } else {
+    // Dynamic abstract hero prism tinted with requested palette
+    elements.push(`
+      <g transform="translate(${cx}, ${cy}) rotate(${sceneIdx * 18})">
+        <polygon points="0,-96 86,52 -86,52" fill="${heroColor}" opacity="0.28" stroke="${heroColor}" stroke-width="4"/>
+        <circle cx="0" cy="0" r="46" fill="#ff2d6f" opacity="0.35" stroke="#ffffff" stroke-width="3"/>
       </g>
     `);
   }
 
-  if (isCat) {
-    // Stylized astronaut / neon cat character
-    const catX = cx + (sceneIdx === 1 ? -24 : sceneIdx === 2 ? 24 : 0);
-    const catY = cy + 40;
+  // Weather & VFX overlays
+  if (hasRain) {
+    for (let i = 0; i < 24; i++) {
+      const rx = ((i * 57 + sceneIdx * 23) % (w - 20)) + 10;
+      const ry = ((i * 89) % (h - 60)) + 20;
+      elements.push(`<line x1="${rx}" y1="${ry}" x2="${rx - 8}" y2="${ry + 28}" stroke="#38bdf8" stroke-width="2" opacity="0.65"/>`);
+    }
+  }
+  if (hasSnow) {
+    for (let i = 0; i < 28; i++) {
+      const sx = ((i * 67 + sceneIdx * 29) % (w - 20)) + 10;
+      const sy = ((i * 73) % (h - 20)) + 10;
+      elements.push(`<circle cx="${sx}" cy="${sy}" r="${2 + (i % 3)}" fill="#ffffff" opacity="0.85"/>`);
+    }
+  }
+  if (hasFire) {
     elements.push(`
-      <g transform="translate(${catX}, ${catY})">
-        <ellipse cx="0" cy="70" rx="52" ry="74" fill="#f1f5f9"/>
-        <rect x="-26" y="42" width="52" height="28" rx="6" fill="#00e5ff" opacity="0.8"/>
-        <circle cx="0" cy="-28" r="56" fill="#0f172a" stroke="#00e5ff" stroke-width="4"/>
-        <polygon points="-36,-66 -18,-108 0,-74" fill="#fb923c"/>
-        <polygon points="36,-66 18,-108 0,-74" fill="#fb923c"/>
-        <circle cx="0" cy="-26" r="40" fill="#fb923c"/>
-        <circle cx="-14" cy="-30" r="6" fill="#09090b"/>
-        <circle cx="14" cy="-30" r="6" fill="#09090b"/>
-        <polygon points="-5,-18 5,-18 0,-12" fill="#ff2d6f"/>
-      </g>
+      <ellipse cx="${cx}" cy="${h - 40}" rx="${w * 0.42}" ry="70" fill="#f97316" opacity="0.55"/>
+      <ellipse cx="${cx}" cy="${h - 20}" rx="${w * 0.25}" ry="48" fill="#fde047" opacity="0.7"/>
     `);
   }
-
-  if (isLove) {
-    elements.push(`
-      <path d="M ${cx} ${cy + 70} C ${cx + 150} ${cy - 40}, ${cx + 100} ${cy - 160}, ${cx} ${cy - 65} C ${cx - 100} ${cy - 160}, ${cx - 150} ${cy - 40}, ${cx} ${cy + 70} Z" fill="#ff2d6f" opacity="0.88"/>
-    `);
+  if (hasLightning) {
+    elements.push(`<polyline points="${w * 0.65},0 ${w * 0.54},${h * 0.26} ${w * 0.62},${h * 0.26} ${w * 0.48},${h * 0.56}" fill="none" stroke="#fde047" stroke-width="6"/>`);
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${elements.join('\n')}</svg>`;
@@ -472,7 +628,7 @@ async function generateAiSvgIllustrations(params: {
   const ai = getGenAI(false);
   if (!ai) {
     return params.scenes.map((sc, i) =>
-      buildKeywordSceneSvg(
+      buildRichSceneSvg(
         `${sc.visualPrompt} ${params.refinement || ''}`,
         params.w,
         params.h,
@@ -531,7 +687,7 @@ Rules for EVERY SVG string:
           const clean = sanitizeSvg(candidate, params.w, params.h);
           return (
             clean ||
-            buildKeywordSceneSvg(sc.visualPrompt, params.w, params.h, idx, params.style)
+            buildRichSceneSvg(sc.visualPrompt, params.w, params.h, idx, params.style)
           );
         });
       }
@@ -541,7 +697,7 @@ Rules for EVERY SVG string:
   }
 
   return params.scenes.map((sc, i) =>
-    buildKeywordSceneSvg(sc.visualPrompt, params.w, params.h, i, params.style),
+    buildRichSceneSvg(sc.visualPrompt, params.w, params.h, i, params.style),
   );
 }
 
@@ -689,7 +845,7 @@ export async function generateVideoAsset(params: {
   try {
     for (let i = 0; i < svgs.length; i++) {
       const pngPath = path.join(MEDIA_DIR, `sc_${crypto.randomUUID()}.png`);
-      const fallbackSvg = buildKeywordSceneSvg(
+      const fallbackSvg = buildRichSceneSvg(
         `${rawScenes[i].visualPrompt} ${cleanRefinement}`,
         w,
         h,
@@ -704,13 +860,13 @@ export async function generateVideoAsset(params: {
     for (const p of pngPaths) {
       args.push('-i', p);
     }
-    const masterDur =
-      pngPaths.length * sceneDurSec + xfadeDur;
+    const masterDur = pngPaths.length * sceneDurSec + xfadeDur;
+    const baseFreq = getAudioFreqForStyle(params.style);
     args.push(
       '-f',
       'lavfi',
       '-i',
-      `sine=frequency=${getAudioFreqForStyle(params.style)}:sample_rate=44100:duration=${masterDur.toFixed(2)}`,
+      `aevalsrc=exprs=0.35*sin(2*PI*${baseFreq}*t)+0.22*sin(2*PI*${Math.round(baseFreq * 1.5)}*t)*(0.5+0.5*sin(2*PI*3.5*t)):s=44100:d=${masterDur.toFixed(2)}`,
     );
 
     const scaleW = Math.round(w * 1.45);
@@ -759,15 +915,23 @@ export async function generateVideoAsset(params: {
       '-map',
       `${pngPaths.length}:a`,
       '-af',
-      `volume=0.06,afade=t=in:st=0:d=0.4,afade=t=out:st=${Math.max(0.5, masterDur - 0.5).toFixed(2)}:d=0.5`,
+      `volume=0.14,afade=t=in:st=0:d=0.4,afade=t=out:st=${Math.max(0.5, masterDur - 0.5).toFixed(2)}:d=0.5`,
       '-c:v',
       'libx264',
+      '-profile:v',
+      'baseline',
+      '-level',
+      '3.1',
       '-preset',
       'ultrafast',
       '-pix_fmt',
       'yuv420p',
       '-c:a',
       'aac',
+      '-b:a',
+      '96k',
+      '-movflags',
+      '+faststart',
       '-shortest',
       targetRenderPath,
     );
@@ -785,6 +949,8 @@ export async function generateVideoAsset(params: {
         String(totalDur),
         '-c',
         'copy',
+        '-movflags',
+        '+faststart',
         outPath,
       ]);
     }
@@ -854,7 +1020,7 @@ export async function generateImageAsset(params: {
     refinement: cleanRefinement,
     systemPrompt: params.systemPrompt,
   });
-  const fallbackSvg = buildKeywordSceneSvg(combinedPrompt, w, h, 0, 'cinematic');
+  const fallbackSvg = buildRichSceneSvg(combinedPrompt, w, h, 0, 'cinematic');
   await svgToPngWithFallback(svgs[0], fallbackSvg, outPath);
 
   return {
@@ -985,24 +1151,33 @@ export interface EditorAiPlan {
   reverse?: boolean;
   rotation?: number;
   flipH?: boolean;
+  scale?: number;
   volume?: number;
-  filterPreset?: 'none' | 'cinema' | 'vintage' | 'bw' | 'vivid' | 'warm' | 'cool';
+  clipDurationMs?: number;
+  filterPreset?: 'none' | 'cinema' | 'vintage' | 'bw' | 'vivid' | 'warm' | 'cool' | 'matte' | 'teal-orange';
   brightness?: number;
   contrast?: number;
   saturation?: number;
   vignette?: number;
-  transitionIn?: 'none' | 'dissolve' | 'slide' | 'zoom' | 'flash' | 'glitch' | 'spin';
+  transitionIn?: 'none' | 'dissolve' | 'slide' | 'zoom' | 'flash' | 'glitch' | 'spin' | 'white-fade' | 'black-fade' | 'wipe';
+  animIn?: 'none' | 'fade' | 'zoom-in' | 'zoom-out' | 'slide-up' | 'slide-left' | 'shake' | 'spin-in';
+  backgroundType?: 'color' | 'blur' | 'gradient';
+  backgroundColor?: string;
   addText?: {
     text: string;
     color?: string;
     isMarquee?: boolean;
     position?: 'top' | 'center' | 'bottom';
   };
-  addEffect?: 'chromatic' | 'vhs' | 'film_burn' | 'sparkle' | 'neon';
-  addAudio?: 'synthwave' | 'lofi' | 'trap' | 'ambient';
+  addEffect?: 'chromatic' | 'vhs' | 'film_burn' | 'sparkle' | 'neon' | 'glitch' | 'shake' | 'blur' | 'soft_glow';
+  addAudio?: string;
   addSticker?: string;
   bgRemove?: boolean;
   retouchSmooth?: number;
+  removeTexts?: boolean;
+  removeEffects?: boolean;
+  removeAudio?: boolean;
+  generateNewScenePrompt?: string;
 }
 
 function buildLocalEditPlan(prompt: string): EditorAiPlan {
@@ -1010,6 +1185,16 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
   const plan: EditorAiPlan = { reply: 'Команда выполнена' };
   const done: string[] = [];
 
+  // Scene creation directly inside the timeline
+  if (/(?:создай|сгенерируй|добавь|нарисуй|покажи).*(?:видео|сцен|ролик|кадр|клип)|^(?:видео про|сцена с)\s+/i.test(p)) {
+    const cleaned = prompt
+      .replace(/^(?:пожалуйста\s+)?(?:создай|сгенерируй|добавь|нарисуй|покажи)\s+(?:новое\s+|красивое\s+)?(?:видео|сцену|ролик|клип|кадр)(?:\s+про|\s+с)?\s*/i, '')
+      .trim();
+    plan.generateNewScenePrompt = cleaned || prompt.trim();
+    done.push(`новая сцена «${(cleaned || prompt).slice(0, 28)}»`);
+  }
+
+  // Filters
   if (/ч[её]рно-?бел|чб|black.*white|bw|монохром/.test(p)) {
     plan.filterPreset = 'bw';
     done.push('фильтр Ч/Б');
@@ -1022,8 +1207,37 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
   } else if (/ярк|сочн|vivid/.test(p)) {
     plan.filterPreset = 'vivid';
     done.push('яркий фильтр');
+  } else if (/т[её]пл|закат|warm/.test(p)) {
+    plan.filterPreset = 'warm';
+    done.push('тёплый фильтр');
+  } else if (/холод|л[её]д|cool/.test(p)) {
+    plan.filterPreset = 'cool';
+    done.push('холодный фильтр');
+  } else if (/мат|matte/.test(p)) {
+    plan.filterPreset = 'matte';
+    done.push('матовый фильтр');
+  } else if (/teal|оранж/.test(p)) {
+    plan.filterPreset = 'teal-orange';
+    done.push('Teal & Orange');
+  } else if (/убер.*фильтр|сброс.*цвет|без фильтр/.test(p)) {
+    plan.filterPreset = 'none';
+    done.push('сброс фильтра');
   }
 
+  // Brightness / contrast / saturation
+  if (/темне|затемн/.test(p)) {
+    plan.brightness = -20;
+    done.push('темнее');
+  } else if (/светле|осветл/.test(p)) {
+    plan.brightness = 20;
+    done.push('светлее');
+  }
+  if (/контраст/.test(p)) {
+    plan.contrast = 25;
+    done.push('контраст +25');
+  }
+
+  // Speed & Time
   const speedMatch = p.match(/(\d+(?:[.,]\d+)?)\s*(?:x|х|раз)/);
   if (speedMatch) {
     plan.speed = Math.max(0.1, Math.min(100, Number(speedMatch[1].replace(',', '.'))));
@@ -1031,12 +1245,19 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
   } else if (/ускор|быстр/.test(p)) {
     plan.speed = 2;
     done.push('скорость 2x');
-  } else if (/замедл|slow/.test(p)) {
+  } else if (/замедл|слоу|slow/.test(p)) {
     plan.speed = 0.5;
     done.push('замедление 0.5x');
   }
 
-  if (/реверс|назад|reverse/.test(p)) {
+  const durMatch = p.match(/(\d+)\s*(?:сек|sec|с\b)/);
+  if (durMatch && !/скорост/.test(p)) {
+    plan.clipDurationMs = Math.max(1500, Math.min(60000, Number(durMatch[1]) * 1000));
+    done.push(`длительность ${durMatch[1]}с`);
+  }
+
+  // Transform
+  if (/реверс|назад|задом|reverse/.test(p)) {
     plan.reverse = true;
     done.push('реверс');
   }
@@ -1048,20 +1269,60 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
     plan.rotation = 90;
     done.push('поворот 90°');
   }
-  if (/16:9|горизонт|youtube/.test(p)) {
-    plan.aspectRatio = '16:9';
-    done.push('формат 16:9');
-  } else if (/9:16|вертик|reels|tiktok/.test(p)) {
-    plan.aspectRatio = '9:16';
-    done.push('формат 9:16');
-  } else if (/1:1|квадрат/.test(p)) {
-    plan.aspectRatio = '1:1';
-    done.push('формат 1:1');
+  if (/приблиз|крупн|зум\s*ин/.test(p)) {
+    plan.scale = 1.3;
+    done.push('приближение 1.3x');
+  } else if (/отдал|уменьш/.test(p)) {
+    plan.scale = 0.8;
+    done.push('масштаб 0.8x');
   }
 
-  if (/глитч|glitch/.test(p)) {
+  // Aspect & Resolution & Background
+  if (/16:9|горизонт|youtube|ютуб/.test(p)) {
+    plan.aspectRatio = '16:9';
+    done.push('формат 16:9');
+  } else if (/9:16|вертик|reels|рилс|tiktok|тик\s*ток|шортс/.test(p)) {
+    plan.aspectRatio = '9:16';
+    done.push('формат 9:16');
+  } else if (/1:1|квадрат|пост/.test(p)) {
+    plan.aspectRatio = '1:1';
+    done.push('формат 1:1');
+  } else if (/21:9|широк/.test(p)) {
+    plan.aspectRatio = '21:9';
+    done.push('формат 21:9');
+  }
+
+  if (/4k|4к/.test(p)) {
+    plan.resolution = '4k';
+    done.push('качество 4K');
+  }
+  if (/разм.*фон|блюр.*фон|inshot/.test(p)) {
+    plan.backgroundType = 'blur';
+    done.push('размытый фон');
+  } else if (/градиент.*фон/.test(p)) {
+    plan.backgroundType = 'gradient';
+    done.push('градиентный фон');
+  }
+
+  // Transitions & Animations
+  if (/вспышк|flash/.test(p)) {
+    plan.transitionIn = 'flash';
+    done.push('переход Вспышка');
+  } else if (/раствор|dissolve|плавн.*переход/.test(p)) {
+    plan.transitionIn = 'dissolve';
+    done.push('переход Растворение');
+  } else if (/вращ.*переход|спин|spin/.test(p)) {
+    plan.transitionIn = 'spin';
+    done.push('переход Вращение');
+  }
+
+  // Effects
+  if (/удал.*эффект|убер.*эффект/.test(p)) {
+    plan.removeEffects = true;
+    done.push('удаление эффектов');
+  } else if (/глитч|glitch/.test(p)) {
     plan.transitionIn = 'glitch';
-    plan.addEffect = 'chromatic';
+    plan.addEffect = 'glitch';
     done.push('глитч-эффект');
   } else if (/неон|neon/.test(p)) {
     plan.addEffect = 'neon';
@@ -1072,32 +1333,86 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
   } else if (/искр|блеск|sparkle/.test(p)) {
     plan.addEffect = 'sparkle';
     done.push('эффект Искры');
+  } else if (/тряск|shake/.test(p)) {
+    plan.addEffect = 'shake';
+    done.push('тряска камеры');
   }
 
-  if (/lofi|лоу-?фай|спокойн/.test(p)) {
+  // Music genres (all 25+ presets)
+  if (/удал.*музык|без звук|убер.*музык|тишин/.test(p)) {
+    plan.removeAudio = true;
+    plan.volume = 0;
+    done.push('отключение звука');
+  } else if (/фонк|phonk|дрифт|drift/.test(p)) {
+    plan.addAudio = 'phonk_drift';
+    done.push('музыка Phonk Drift');
+  } else if (/дрилл|drill/.test(p)) {
+    plan.addAudio = 'drill_uk';
+    done.push('музыка London Drill');
+  } else if (/техно|techno|рэйв|rave/.test(p)) {
+    plan.addAudio = 'techno_rave';
+    done.push('музыка Techno');
+  } else if (/хаус|house|клуб|club/.test(p)) {
+    plan.addAudio = 'house_club';
+    done.push('музыка House');
+  } else if (/lofi|лоу-?фай|спокойн/.test(p)) {
     plan.addAudio = 'lofi';
     done.push('музыка Lo-Fi');
-  } else if (/trap|трэп|кач|бит/.test(p)) {
+  } else if (/пианин|грустн|piano/.test(p)) {
+    plan.addAudio = 'piano_sad';
+    done.push('музыка Piano');
+  } else if (/эпич|трейлер|epic/.test(p)) {
+    plan.addAudio = 'epic_trailer';
+    done.push('эпичная музыка');
+  } else if (/поп|весел|влог|pop/.test(p)) {
+    plan.addAudio = 'pop_viral';
+    done.push('музыка Viral Pop');
+  } else if (/трэп|trap|кач|бит/.test(p)) {
     plan.addAudio = 'trap';
     done.push('музыка Trap');
-  } else if (/музык|трек|саундтрек/.test(p)) {
+  } else if (/рок|rock|спорт/.test(p)) {
+    plan.addAudio = 'rock_energy';
+    done.push('музыка Rock');
+  } else if (/музык|трек|саундтрек|синт/.test(p)) {
     plan.addAudio = 'synthwave';
     done.push('музыка Synthwave');
   }
 
-  const quoted = prompt.match(/[«"']([^»"']+)[»"']/);
-  if (quoted) {
-    plan.addText = {
-      text: quoted[1],
-      position: /верх|top/.test(p) ? 'top' : /низ|bottom/.test(p) ? 'bottom' : 'center',
-      isMarquee: /бегущ/.test(p),
-    };
-    done.push(`текст «${quoted[1]}»`);
+  // Text extraction (quoted OR unquoted e.g. "добавь текст Привет мир")
+  if (/удал.*текст|убер.*текст/.test(p)) {
+    plan.removeTexts = true;
+    done.push('удаление текста');
+  } else {
+    const quoted = prompt.match(/[«"']([^»"']+)[»"']/);
+    const unquoted = prompt.match(
+      /(?:добавь|вставь|напиши|сделай)\s+(?:текст|титр|заголовок|надпись)\s+([^\n,.;]+?)(?=\s+(?:и\s+(?:музык|трек|звук|эффект|фильтр|стикер|переход|сделай|добавь|ускор|замедл)|на\s+(?:верх|центр|низ))|$)/i,
+    );
+    const textValue = (quoted?.[1] || unquoted?.[1] || '').trim();
+    if (textValue) {
+      plan.addText = {
+        text: textValue,
+        position: /верх|наверх|top/.test(p) ? 'top' : /низ|сниз|bottom/.test(p) ? 'bottom' : 'center',
+        isMarquee: /бегущ/.test(p),
+        color: /красн/.test(p) ? '#ef4444' : /голуб|син/.test(p) ? '#00E5FF' : /желт|золот/.test(p) ? '#FACC15' : '#FFFFFF',
+      };
+      done.push(`текст «${textValue}»`);
+    }
+  }
+
+  // Stickers
+  if (/стикер|эмодз|огон|сердц/.test(p)) {
+    const stickerChar = /сердц/.test(p) ? '💖' : /молн/.test(p) ? '⚡' : /корон/.test(p) ? '👑' : '🔥';
+    plan.addSticker = stickerChar;
+    done.push(`стикер ${stickerChar}`);
   }
 
   if (/удал.*фон|выреж.*фон/.test(p)) {
     plan.bgRemove = true;
     done.push('удаление фона');
+  }
+  if (/ретуш|сглад|кож/.test(p)) {
+    plan.retouchSmooth = 65;
+    done.push('ретушь лица');
   }
   if (/виньет/.test(p)) {
     plan.vignette = 60;
@@ -1105,7 +1420,11 @@ function buildLocalEditPlan(prompt: string): EditorAiPlan {
   }
 
   if (done.length > 0) {
-    plan.reply = `Выполнено: ${done.join(', ')}`;
+    plan.reply = `Выполнено строго по команде: ${done.join(', ')}`;
+  } else if (prompt.trim()) {
+    // If user wrote something freeform not matching edit keywords, treat as a new scene request
+    plan.generateNewScenePrompt = prompt.trim();
+    plan.reply = `Создаю сцену по вашему запросу: «${prompt.trim().slice(0, 40)}»`;
   }
   return plan;
 }
@@ -1123,26 +1442,19 @@ export async function executeEditorWish(params: {
       const response = await withTimeout(
         ai.models.generateContent({
           model: 'gemini-4-hydrogen',
-          contents: `You are the Kinetix video editor AI executor. Convert the user's editing wish into exact JSON actions.
+          contents: `You are the strict Kinetix video editor AI executor. You MUST faithfully obey what the user asks for and convert their wish into exact JSON actions.
 Current format: ${params.aspectRatio}, resolution: ${params.resolution}.
 User wish: "${params.prompt}"
 Reply language: ${params.language}.
 
 CRITICAL RULES:
-1. Only output fields that the user explicitly asked to change or add! Do NOT include transitionIn, vignette, volume, speed, etc. unless the user mentioned them.
-2. If the user asks to add text/title/caption, you MUST set "addText": { "text": "...", "position": "top"|"center"|"bottom" }.
-3. If the user asks for an effect (neon, glitch, vhs, sparkle, film_burn, chromatic), you MUST set "addEffect" (e.g. "neon").
-4. If the user asks for music/soundtrack (synthwave, lofi, trap, ambient), you MUST set "addAudio".
-5. If the user asks for a sticker/emoji, you MUST set "addSticker" (emoji char).
-6. Set "reply" to a brief confirmation in ${params.language}.
-
-Allowed enum values:
-- aspectRatio: "9:16" | "16:9" | "1:1" | "4:5" | "4:3" | "21:9"
-- resolution: "720p" | "1080p" | "2k" | "4k"
-- filterPreset: "none" | "cinema" | "vintage" | "bw" | "vivid" | "warm" | "cool"
-- transitionIn: "none" | "dissolve" | "slide" | "zoom" | "flash" | "glitch" | "spin"
-- addEffect: "chromatic" | "vhs" | "film_burn" | "sparkle" | "neon"
-- addAudio: "synthwave" | "lofi" | "trap" | "ambient"`,
+1. Only output fields that the user explicitly asked to change or add! Never invent unrequested fields.
+2. If the user asks to create/generate/add a new video scene (e.g., "создай сцену с драконом"), set "generateNewScenePrompt" to the visual scene prompt.
+3. If the user asks to add text/title/caption, set "addText": { "text": "...", "position": "top"|"center"|"bottom" }.
+4. If the user asks for an effect (neon, glitch, vhs, sparkle, film_burn, chromatic, shake, blur, soft_glow), set "addEffect".
+5. If the user asks for music, set "addAudio" to the closest preset: phonk_drift, drill_uk, trap, techno_rave, house_club, synthwave, pop_viral, rock_energy, lofi, ambient, piano_sad, epic_trailer.
+6. If the user asks for a sticker/emoji, set "addSticker" (emoji char).
+7. Set "reply" to a brief confirmation in ${params.language}.`,
           config: {
             thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
             responseMimeType: 'application/json',
@@ -1156,13 +1468,18 @@ Allowed enum values:
                 reverse: { type: Type.BOOLEAN },
                 rotation: { type: Type.INTEGER },
                 flipH: { type: Type.BOOLEAN },
+                scale: { type: Type.NUMBER },
                 volume: { type: Type.INTEGER },
+                clipDurationMs: { type: Type.INTEGER },
                 filterPreset: { type: Type.STRING },
                 brightness: { type: Type.INTEGER },
                 contrast: { type: Type.INTEGER },
                 saturation: { type: Type.INTEGER },
                 vignette: { type: Type.INTEGER },
                 transitionIn: { type: Type.STRING },
+                animIn: { type: Type.STRING },
+                backgroundType: { type: Type.STRING },
+                backgroundColor: { type: Type.STRING },
                 addText: {
                   type: Type.OBJECT,
                   properties: {
@@ -1177,6 +1494,10 @@ Allowed enum values:
                 addSticker: { type: Type.STRING },
                 bgRemove: { type: Type.BOOLEAN },
                 retouchSmooth: { type: Type.INTEGER },
+                removeTexts: { type: Type.BOOLEAN },
+                removeEffects: { type: Type.BOOLEAN },
+                removeAudio: { type: Type.BOOLEAN },
+                generateNewScenePrompt: { type: Type.STRING },
               },
               required: ['reply'],
             },
@@ -1189,7 +1510,6 @@ Allowed enum values:
       if (raw) {
         const parsed = JSON.parse(raw) as EditorAiPlan;
         if (parsed && parsed.reply) {
-          // Strip unrequested zero/none placeholders and merge deterministic matches so nothing requested is dropped
           if (parsed.transitionIn === 'none' && !/убер.*переход|без переход|no transition/i.test(params.prompt)) {
             delete parsed.transitionIn;
           }
@@ -1206,6 +1526,8 @@ Allowed enum values:
             addEffect: parsed.addEffect || localPlan.addEffect,
             addAudio: parsed.addAudio || localPlan.addAudio,
             addSticker: parsed.addSticker || localPlan.addSticker,
+            generateNewScenePrompt:
+              parsed.generateNewScenePrompt || localPlan.generateNewScenePrompt,
           };
         }
       }

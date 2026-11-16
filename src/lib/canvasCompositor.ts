@@ -174,8 +174,9 @@ export function renderFrameToCanvas(params: {
   mediaCache: Map<string, MediaCacheEntry>;
   showGuides: boolean;
   showWatermark: boolean;
+  isPlaying?: boolean;
 }) {
-  const { ctx, state, timeMs, mediaCache, showGuides, showWatermark } = params;
+  const { ctx, state, timeMs, mediaCache, showGuides, showWatermark, isPlaying = false } = params;
   const { w, h } = getCanvasDimensions(state.aspectRatio);
 
   if (ctx.canvas.width !== w || ctx.canvas.height !== h) {
@@ -358,16 +359,46 @@ export function renderFrameToCanvas(params: {
         const vid = entry.el as HTMLVideoElement;
         mediaW = vid.videoWidth || w;
         mediaH = vid.videoHeight || h;
+        const speed = Math.max(0.1, clip.speed || 1);
         const targetSec =
-          ((clip.reverse ? clip.durationMs - localMs : localMs) * clip.speed +
+          ((clip.reverse ? Math.max(0, clip.durationMs - localMs) : localMs) * speed +
             clip.trimStartMs) /
           1000;
-        if (Number.isFinite(targetSec) && vid.readyState >= 2 && !vid.seeking) {
+        if (Number.isFinite(targetSec) && vid.readyState >= 2) {
           const maxDur =
-            vid.duration && Number.isFinite(vid.duration) ? vid.duration : targetSec + 1;
+            vid.duration && Number.isFinite(vid.duration) && vid.duration > 0.05
+              ? vid.duration
+              : targetSec + 1;
           const clampedSec = Math.max(0, Math.min(maxDur - 0.02, targetSec % maxDur));
-          if (Math.abs(vid.currentTime - clampedSec) > 0.35) {
-            vid.currentTime = clampedSec;
+          if (isPlaying && !clip.reverse) {
+            // Let HTMLVideoElement decode smoothly forward; seek only on major desync
+            const desiredRate = Math.max(0.25, Math.min(4, speed));
+            if (Math.abs(vid.playbackRate - desiredRate) > 0.05) {
+              try {
+                vid.playbackRate = desiredRate;
+              } catch {
+                // ignore
+              }
+            }
+            if (vid.paused) {
+              void vid.play().catch(() => {});
+            }
+            if (!vid.seeking && Math.abs(vid.currentTime - clampedSec) > 0.9) {
+              try {
+                vid.currentTime = clampedSec;
+              } catch {
+                // ignore
+              }
+            }
+          } else {
+            if (!vid.paused) vid.pause();
+            if (!vid.seeking && Math.abs(vid.currentTime - clampedSec) > 0.08) {
+              try {
+                vid.currentTime = clampedSec;
+              } catch {
+                // ignore
+              }
+            }
           }
         }
       }

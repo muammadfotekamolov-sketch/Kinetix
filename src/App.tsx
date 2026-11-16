@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { getRedirectResult, onAuthStateChanged } from 'firebase/auth';
 import { AiStudioModal } from './components/AiStudioModal.tsx';
 import { HomeView } from './components/HomeView.tsx';
 import { OnboardingFlow } from './components/OnboardingFlow.tsx';
@@ -51,6 +51,44 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    let unsub: (() => void) | undefined;
+
+    const failsafeTimer = window.setTimeout(() => {
+      if (active) setBooting(false);
+    }, 2500);
+
+    const syncFirebaseUser = async () => {
+      try {
+        const res = await apiFetch<{ user: UserProfile }>('/api/user/me');
+        if (active && res.user) {
+          setUser(res.user);
+          if (res.user.language) setLang(res.user.language);
+          await loadProjects();
+          return true;
+        }
+      } catch {
+        // fallback: ensure session row exists if user came back from redirect
+        try {
+          const savedProfileRaw = sessionStorage.getItem('kinetix_pending_google_profile');
+          const savedProfile = savedProfileRaw ? JSON.parse(savedProfileRaw) : {};
+          const sessionRes = await apiFetch<{ user: UserProfile }>('/api/auth/session', {
+            method: 'POST',
+            body: JSON.stringify(savedProfile),
+          });
+          sessionStorage.removeItem('kinetix_pending_google_profile');
+          if (active && sessionRes.user) {
+            setUser(sessionRes.user);
+            if (sessionRes.user.language) setLang(sessionRes.user.language);
+            await loadProjects();
+            return true;
+          }
+        } catch {
+          // user hasn't finished session sync
+        }
+      }
+      return false;
+    };
+
     const bootstrap = async () => {
       const localToken = getLocalSessionToken();
       if (localToken) {
@@ -60,7 +98,7 @@ export default function App() {
             setUser(res.user);
             if (res.user.language) setLang(res.user.language);
             await loadProjects();
-            setBooting(false);
+            if (active) setBooting(false);
             return;
           }
         } catch {
@@ -68,29 +106,33 @@ export default function App() {
         }
       }
 
-      const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      try {
+        const redirectCred = await getRedirectResult(auth);
+        if (active && redirectCred?.user) {
+          await syncFirebaseUser();
+          if (active) setBooting(false);
+          return;
+        }
+      } catch {
+        // ignore redirect result errors cleanly
+      }
+
+      if (!active) return;
+
+      unsub = onAuthStateChanged(auth, async (fbUser) => {
         if (!active) return;
         if (fbUser) {
-          try {
-            const res = await apiFetch<{ user: UserProfile }>('/api/user/me');
-            if (active && res.user) {
-              setUser(res.user);
-              if (res.user.language) setLang(res.user.language);
-              await loadProjects();
-            }
-          } catch {
-            // user hasn't finished session sync
-          }
+          await syncFirebaseUser();
         }
         if (active) setBooting(false);
       });
-
-      return () => unsub();
     };
 
     void bootstrap();
     return () => {
       active = false;
+      window.clearTimeout(failsafeTimer);
+      if (unsub) unsub();
     };
   }, []);
 

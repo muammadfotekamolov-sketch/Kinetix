@@ -1,5 +1,86 @@
 import type { AudioClip } from '../types/editor.ts';
 
+interface GenreSpec {
+  stepMs: number;
+  wave: OscillatorType;
+  bassWave: OscillatorType;
+  notes: number[];
+  bass: number[];
+  kickEvery: number;
+}
+
+function getGenreSpec(preset: string): GenreSpec {
+  switch (preset) {
+    case 'phonk_drift':
+    case 'phonk_tokyo':
+    case 'phonk_aggressive':
+    case 'phonk_night':
+    case 'phonk_brazil':
+      return {
+        stepMs: preset === 'phonk_brazil' ? 190 : 210,
+        wave: 'sawtooth',
+        bassWave: 'triangle',
+        notes: [220, 261.63, 246.94, 220, 293.66, 261.63, 246.94, 196],
+        bass: [55, 55, 65.41, 55, 73.42, 65.41, 61.74, 49],
+        kickEvery: 2,
+      };
+    case 'trap':
+    case 'trap_urban':
+    case 'trap_dark':
+    case 'drill_uk':
+    case 'hiphop_boom':
+    case 'trap_luxury':
+      return {
+        stepMs: preset === 'hiphop_boom' ? 280 : 215,
+        wave: 'triangle',
+        bassWave: 'sine',
+        notes: [146.83, 174.61, 220, 196, 174.61, 261.63, 220, 146.83],
+        bass: [55, 55, 65.41, 55, 49, 55, 73.42, 55],
+        kickEvery: 2,
+      };
+    case 'techno_rave':
+    case 'house_club':
+    case 'future_bass':
+    case 'drum_n_bass':
+    case 'synthwave':
+      return {
+        stepMs: preset === 'drum_n_bass' ? 145 : preset === 'techno_rave' ? 185 : 225,
+        wave: 'sawtooth',
+        bassWave: 'sawtooth',
+        notes: [261.63, 329.63, 392.0, 493.88, 392.0, 329.63, 293.66, 329.63],
+        bass: [65.41, 65.41, 82.41, 98.0, 82.41, 65.41, 73.42, 65.41],
+        kickEvery: 2,
+      };
+    case 'pop_viral':
+    case 'funk_upbeat':
+    case 'afrobeat':
+    case 'reggaeton_latino':
+    case 'rock_energy':
+      return {
+        stepMs: preset === 'funk_upbeat' ? 235 : 250,
+        wave: preset === 'rock_energy' ? 'sawtooth' : 'triangle',
+        bassWave: 'triangle',
+        notes: [293.66, 369.99, 440, 392, 329.63, 369.99, 293.66, 440],
+        bass: [73.42, 73.42, 92.5, 98, 82.41, 92.5, 73.42, 110],
+        kickEvery: 2,
+      };
+    case 'lofi':
+    case 'ambient':
+    case 'piano_sad':
+    case 'epic_trailer':
+    case 'chill_sunset':
+    default:
+      return {
+        stepMs: preset === 'ambient' || preset === 'epic_trailer' ? 520 : 340,
+        wave: preset === 'epic_trailer' ? 'sawtooth' : 'sine',
+        bassWave: 'sine',
+        notes: [196, 246.94, 293.66, 329.63, 293.66, 246.94, 220, 261.63],
+        bass: [98, 98, 73.42, 82.41],
+        kickEvery: preset === 'ambient' ? 4 : 2,
+      };
+  }
+}
+
 class KinetixAudioEngine {
   private ctx: AudioContext | null = null;
   private activeNodes: AudioNode[] = [];
@@ -46,6 +127,62 @@ class KinetixAudioEngine {
     this.activeNodes = [];
   }
 
+  private playSfx(ctx: AudioContext, destination: AudioNode, preset: string) {
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    const now = ctx.currentTime;
+
+    if (preset === 'boom_impact') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(38, now + 0.7);
+      env.gain.setValueAtTime(0.85, now);
+      env.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+      osc.connect(env);
+      env.connect(destination);
+      osc.start(now);
+      osc.stop(now + 0.8);
+    } else if (preset === 'camera_shutter' || preset === 'pop') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(preset === 'camera_shutter' ? 1100 : 560, now);
+      osc.frequency.exponentialRampToValueAtTime(140, now + 0.14);
+      env.gain.setValueAtTime(0.65, now);
+      env.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.connect(env);
+      env.connect(destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } else if (preset === 'glitch_sfx') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(220, now + 0.06);
+      osc.frequency.setValueAtTime(640, now + 0.12);
+      osc.frequency.exponentialRampToValueAtTime(95, now + 0.35);
+      env.gain.setValueAtTime(0.45, now);
+      env.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+      osc.connect(env);
+      env.connect(destination);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } else {
+      // whoosh / riser
+      osc.type = 'sawtooth';
+      const dur = preset === 'riser' ? 1.5 : 0.85;
+      const startF = preset === 'whoosh' ? 540 : 110;
+      const endF = preset === 'whoosh' ? 85 : 940;
+      osc.frequency.setValueAtTime(startF, now);
+      osc.frequency.exponentialRampToValueAtTime(endF, now + dur);
+      env.gain.setValueAtTime(0.05, now);
+      env.gain.linearRampToValueAtTime(0.45, now + dur * 0.65);
+      env.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(env);
+      env.connect(destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.05);
+    }
+    this.activeNodes.push(osc, env);
+  }
+
   private scheduleSynthClip(ctx: AudioContext, clip: AudioClip, delayMs: number, maxPlayMs: number) {
     const vol = Math.max(0.02, Math.min(1, clip.volume / 100));
     const preset = clip.synthPreset || 'synthwave';
@@ -53,60 +190,71 @@ class KinetixAudioEngine {
     const startFn = () => {
       if (!this.ctx) return;
       const gain = ctx.createGain();
-      gain.gain.value = vol * 0.22;
+      gain.gain.value = vol * 0.24;
       const processed = this.applyEffectsChain(ctx, gain, clip);
       processed.connect(ctx.destination);
 
-      if (preset === 'whoosh' || preset === 'riser' || preset === 'pop') {
-        const osc = ctx.createOscillator();
-        osc.type = preset === 'pop' ? 'sine' : 'sawtooth';
-        const durSec = preset === 'pop' ? 0.25 : 1.1;
-        const startFreq = preset === 'whoosh' ? 460 : preset === 'pop' ? 520 : 120;
-        const endFreq = preset === 'whoosh' ? 95 : preset === 'pop' ? 180 : 880;
-        osc.frequency.setValueAtTime(startFreq, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + durSec);
-        osc.connect(gain);
-        osc.start();
-        osc.stop(ctx.currentTime + durSec + 0.05);
-        this.activeNodes.push(osc, gain);
+      if (
+        preset === 'whoosh' ||
+        preset === 'riser' ||
+        preset === 'pop' ||
+        preset === 'boom_impact' ||
+        preset === 'camera_shutter' ||
+        preset === 'glitch_sfx'
+      ) {
+        this.playSfx(ctx, gain, preset);
+        this.activeNodes.push(gain);
         return;
       }
 
-      const scale =
-        preset === 'trap'
-          ? [110, 110, 146.83, 130.81, 110, 164.81, 146.83, 110]
-          : preset === 'ambient'
-            ? [220, 277.18, 329.63, 440]
-            : preset === 'lofi'
-              ? [196, 246.94, 293.66, 329.63, 293.66, 246.94]
-              : [130.81, 164.81, 196, 261.63, 196, 164.81];
+      const spec = getGenreSpec(preset);
       let step = 0;
-      const stepMs = preset === 'trap' ? 215 : preset === 'ambient' ? 650 : preset === 'lofi' ? 330 : 240;
 
       const triggerNote = () => {
         if (!this.ctx) return;
+        const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const env = this.ctx.createGain();
-        osc.type = preset === 'ambient' ? 'sine' : preset === 'lofi' ? 'triangle' : 'sawtooth';
-        osc.frequency.value = scale[step % scale.length];
-        env.gain.setValueAtTime(0.001, this.ctx.currentTime);
-        env.gain.linearRampToValueAtTime(0.38, this.ctx.currentTime + 0.03);
-        env.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + stepMs / 1000);
+        osc.type = spec.wave;
+        osc.frequency.value = spec.notes[step % spec.notes.length];
+        env.gain.setValueAtTime(0.001, now);
+        env.gain.linearRampToValueAtTime(0.35, now + 0.025);
+        env.gain.exponentialRampToValueAtTime(0.001, now + spec.stepMs / 1000);
         osc.connect(env);
         env.connect(gain);
-        osc.start();
-        osc.stop(this.ctx.currentTime + stepMs / 1000 + 0.02);
+        osc.start(now);
+        osc.stop(now + spec.stepMs / 1000 + 0.03);
         this.activeNodes.push(osc, env);
+
+        if (step % spec.kickEvery === 0) {
+          const bassOsc = this.ctx.createOscillator();
+          const bassEnv = this.ctx.createGain();
+          bassOsc.type = spec.bassWave;
+          bassOsc.frequency.setValueAtTime(spec.bass[step % spec.bass.length] * 1.4, now);
+          bassOsc.frequency.exponentialRampToValueAtTime(
+            spec.bass[step % spec.bass.length],
+            now + 0.09,
+          );
+          bassEnv.gain.setValueAtTime(0.45, now);
+          bassEnv.gain.exponentialRampToValueAtTime(0.001, now + Math.min(0.42, spec.stepMs / 900));
+          bassOsc.connect(bassEnv);
+          bassEnv.connect(gain);
+          bassOsc.start(now);
+          bassOsc.stop(now + 0.45);
+          this.activeNodes.push(bassOsc, bassEnv);
+        }
+
         step++;
       };
 
       triggerNote();
-      const interval = window.setInterval(triggerNote, stepMs);
+      const interval = window.setInterval(triggerNote, spec.stepMs);
       this.timers.push(interval);
       const stopT = window.setTimeout(() => {
         window.clearInterval(interval);
       }, Math.max(200, maxPlayMs));
       this.timers.push(stopT);
+      this.activeNodes.push(gain);
     };
 
     if (delayMs <= 20) {
@@ -163,9 +311,13 @@ class KinetixAudioEngine {
     if (clip.src) {
       const audio = new Audio(clip.src);
       audio.volume = Math.min(1, vol);
-      const source = ctx.createMediaElementSource(audio);
-      const dest = this.applyEffectsChain(ctx, source, clip);
-      dest.connect(ctx.destination);
+      try {
+        const source = ctx.createMediaElementSource(audio);
+        const dest = this.applyEffectsChain(ctx, source, clip);
+        dest.connect(ctx.destination);
+      } catch {
+        // fallback to plain HTMLAudioElement
+      }
       void audio.play().catch(() => {});
       this.activeMediaEls.push(audio);
       const stopTimer = window.setTimeout(() => {
@@ -185,7 +337,6 @@ class KinetixAudioEngine {
   ): AudioNode {
     let tail: AudioNode = input;
 
-    // 5-band Equalizer
     const freqs = [80, 320, 1000, 3500, 10000];
     clip.eq.forEach((db, idx) => {
       if (db !== 0) {
@@ -198,7 +349,6 @@ class KinetixAudioEngine {
       }
     });
 
-    // Voice changer filters
     if (clip.voiceEffect === 'radio') {
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass';

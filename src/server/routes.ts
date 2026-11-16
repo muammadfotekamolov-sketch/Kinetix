@@ -1,8 +1,14 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Express, Request, Response } from 'express';
 import express from 'express';
 import { and, desc, eq } from 'drizzle-orm';
 import Stripe from 'stripe';
+
+const execFileAsync = promisify(execFile);
 import { db } from '../db/index.ts';
 import {
   colorPresets,
@@ -12,8 +18,14 @@ import {
   socialConnections,
   users,
 } from '../db/schema.ts';
-import { getOrCreateUser, updateUserProfile } from '../db/users.ts';
-import { requireAuth, signSessionToken, type AuthRequest } from '../middleware/auth.ts';
+import { findUserByContact, getOrCreateUser, updateUserProfile } from '../db/users.ts';
+import {
+  requireAuth,
+  signOtpToken,
+  signSessionToken,
+  verifyOtpToken,
+  type AuthRequest,
+} from '../middleware/auth.ts';
 import {
   executeEditorWish,
   generateImageAsset,
@@ -55,9 +67,126 @@ function getAppBaseUrl(req: Request): string {
 }
 
 export function registerRoutes(app: Express) {
-  app.use('/media', express.static(MEDIA_DIR));
+  app.use(
+    '/media',
+    express.static(MEDIA_DIR, {
+      acceptRanges: true,
+      setHeaders: (res) => {
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      },
+    }),
+  );
 
-  // 1. Auth & OTP Registration
+  // Universal Mobile Media Import (MOV/3GP/MKV/AVI/WEBM/HEIC/M4A -> H.264 Baseline MP4 / JPG / MP3)
+  app.post(
+    '/api/media/import',
+    requireAuth,
+    express.raw({ type: 'application/octet-stream', limit: '150mb' }),
+    async (req: AuthRequest, res: Response) => {
+      const id = crypto.randomUUID();
+      const rawName = decodeURIComponent(String(req.headers['x-media-name'] || 'upload.bin'));
+      const mime = String(req.headers['x-media-mime'] || '').toLowerCase();
+      const extMatch = path.extname(rawName).toLowerCase() || '.bin';
+      const inPath = path.join(MEDIA_DIR, `imp_in_${id}${extMatch}`);
+      try {
+        const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+        if (!buf || buf.length === 0) {
+          return res.status(400).json({ error: 'EMPTY_MEDIA_FILE' });
+        }
+        fs.writeFileSync(inPath, buf);
+
+        const isAudio =
+          mime.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|flac|opus)$/.test(extMatch);
+        const isVideo =
+          mime.startsWith('video/') ||
+          /\.(mp4|mov|m4v|3gp|mkv|avi|webm|mpeg|mpg)$/.test(extMatch);
+
+        if (isAudio) {
+          const outName = `imp_${id}.mp3`;
+          const outPath = path.join(MEDIA_DIR, outName);
+          await execFileAsync('/usr/bin/ffmpeg', [
+            '-y',
+            '-i',
+            inPath,
+            '-vn',
+            '-c:a',
+            'libmp3lame',
+            '-b:a',
+            '192k',
+            '-ar',
+            '44100',
+            outPath,
+          ]);
+          return res.json({ url: `/media/${outName}`, mediaType: 'audio' });
+        }
+
+        if (isVideo) {
+          const outName = `imp_${id}.mp4`;
+          const outPath = path.join(MEDIA_DIR, outName);
+          await execFileAsync('/usr/bin/ffmpeg', [
+            '-y',
+            '-i',
+            inPath,
+            '-vf',
+            'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            '-c:v',
+            'libx264',
+            '-profile:v',
+            'baseline',
+            '-level',
+            '3.1',
+            '-preset',
+            'veryfast',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            '-ar',
+            '44100',
+            '-ac',
+            '2',
+            '-movflags',
+            '+faststart',
+            outPath,
+          ]);
+          return res.json({ url: `/media/${outName}`, mediaType: 'video' });
+        }
+
+        // Universal Image normalization (HEIC/WEBP/PNG/JPG -> JPG)
+        const outName = `imp_${id}.jpg`;
+        const outPath = path.join(MEDIA_DIR, outName);
+        try {
+          await execFileAsync('/usr/bin/ffmpeg', [
+            '-y',
+            '-i',
+            inPath,
+            '-vf',
+            'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            '-q:v',
+            '3',
+            outPath,
+          ]);
+          return res.json({ url: `/media/${outName}`, mediaType: 'image' });
+        } catch {
+          const keepName = `imp_${id}${extMatch === '.png' ? '.png' : '.jpg'}`;
+          fs.copyFileSync(inPath, path.join(MEDIA_DIR, keepName));
+          return res.json({ url: `/media/${keepName}`, mediaType: 'image' });
+        }
+      } catch (err) {
+        console.error('POST /api/media/import error:', err);
+        return res.status(500).json({ error: 'MEDIA_IMPORT_FAILED' });
+      } finally {
+        if (fs.existsSync(inPath)) {
+          fs.rmSync(inPath, { force: true });
+        }
+      }
+    },
+  );
+
+  // 1. Auth & OTP Registration / Login
   app.post('/api/auth/send-code', (req: Request, res: Response) => {
     const { contact } = req.body as { contact?: string };
     if (!contact || !contact.trim()) {
@@ -70,12 +199,29 @@ export function registerRoutes(app: Express) {
       target: normalized,
       expiresAt: Date.now() + 10 * 60 * 1000,
     });
+    const otpToken = signOtpToken(normalized, code);
     return res.json({
       sent: true,
       target: normalized,
       verificationCodePreview: code,
+      otpToken,
     });
   });
+
+  const validateOtpCode = (normalized: string, code: string, otpToken?: string): boolean => {
+    const cleanCode = String(code || '').trim();
+    if (!normalized || !cleanCode) return false;
+    if (otpToken && verifyOtpToken(otpToken, normalized, cleanCode)) {
+      otpStore.delete(normalized);
+      return true;
+    }
+    const pending = otpStore.get(normalized);
+    if (pending && pending.expiresAt >= Date.now() && pending.code === cleanCode) {
+      otpStore.delete(normalized);
+      return true;
+    }
+    return false;
+  };
 
   app.post('/api/auth/verify-register', async (req: Request, res: Response) => {
     try {
@@ -83,6 +229,7 @@ export function registerRoutes(app: Express) {
         contact,
         contactType,
         code,
+        otpToken,
         firstName,
         lastName,
         birthDate,
@@ -95,6 +242,7 @@ export function registerRoutes(app: Express) {
         contact: string;
         contactType: 'email' | 'phone';
         code: string;
+        otpToken?: string;
         firstName: string;
         lastName: string;
         birthDate: string;
@@ -115,17 +263,19 @@ export function registerRoutes(app: Express) {
       }
 
       const normalized = (contact || '').trim().toLowerCase();
-      const pending = otpStore.get(normalized);
-      if (!pending || pending.expiresAt < Date.now() || pending.code !== String(code).trim()) {
+      if (!validateOtpCode(normalized, code, otpToken)) {
         return res.status(400).json({ error: 'INVALID_OR_EXPIRED_CODE' });
       }
-      otpStore.delete(normalized);
 
-      const uid = `otp_${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 20)}`;
+      const existingByContact = await findUserByContact(normalized);
+      const uid =
+        existingByContact?.uid ||
+        `otp_${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 20)}`;
+
       const user = await getOrCreateUser({
         uid,
-        email: contactType === 'email' ? normalized : '',
-        phone: contactType === 'phone' ? normalized : '',
+        email: contactType === 'email' ? normalized : existingByContact?.email || '',
+        phone: contactType === 'phone' ? normalized : existingByContact?.phone || '',
         firstName: (firstName || '').trim(),
         lastName: (lastName || '').trim(),
         birthDate,
@@ -150,6 +300,43 @@ export function registerRoutes(app: Express) {
     } catch (err) {
       console.error('Register verify error:', err);
       return res.status(500).json({ error: 'Registration failed.' });
+    }
+  });
+
+  app.post('/api/auth/verify-login', async (req: Request, res: Response) => {
+    try {
+      const { contact, code, otpToken } = req.body as {
+        contact?: string;
+        code?: string;
+        otpToken?: string;
+      };
+      const normalized = (contact || '').trim().toLowerCase();
+      if (!normalized) {
+        return res.status(400).json({ error: 'Contact email or phone is required.' });
+      }
+      if (!validateOtpCode(normalized, code || '', otpToken)) {
+        return res.status(400).json({ error: 'INVALID_OR_EXPIRED_CODE' });
+      }
+
+      let existingUser = await findUserByContact(normalized);
+      if (!existingUser) {
+        const uid = `otp_${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 20)}`;
+        const rows = await db.select().from(users).where(eq(users.uid, uid));
+        existingUser = rows[0] ?? null;
+      }
+
+      if (!existingUser) {
+        return res.status(404).json({ error: 'ACCOUNT_NOT_FOUND' });
+      }
+
+      const token = signSessionToken({
+        uid: existingUser.uid,
+        email: existingUser.email || normalized,
+      });
+      return res.json({ token, user: existingUser });
+    } catch (err) {
+      console.error('Login verify error:', err);
+      return res.status(500).json({ error: 'Login failed.' });
     }
   });
 

@@ -12,6 +12,105 @@ export const TEMPLATE_IMAGES = {
   productStudio: '/src/assets/images/template_product_studio_1794679300847.jpg',
 };
 
+export const TEMPLATE_VIDEOS = {
+  tokyoNeon: '/templates/tokyo_neon.mp4',
+  icelandHorizon: '/templates/iceland_horizon.mp4',
+  fashionStudio: '/templates/fashion_studio.mp4',
+  productStudio: '/templates/product_studio.mp4',
+  actionDrift: '/templates/action_drift.mp4',
+};
+
+export interface StockMediaItem {
+  id: string;
+  kind: 'video' | 'image';
+  title: string;
+  src: string;
+  poster?: string;
+  aspectRatio: AspectRatio;
+  durationMs: number;
+  tag: string;
+}
+
+export const STOCK_MEDIA_LIBRARY: StockMediaItem[] = [
+  {
+    id: 'stk_vid_tokyo',
+    kind: 'video',
+    title: 'Ночной неон Токио',
+    src: TEMPLATE_VIDEOS.tokyoNeon,
+    poster: TEMPLATE_IMAGES.urbanReel,
+    aspectRatio: '9:16',
+    durationMs: 6000,
+    tag: 'MP4 · 9:16',
+  },
+  {
+    id: 'stk_vid_iceland',
+    kind: 'video',
+    title: 'Горизонт Исландии',
+    src: TEMPLATE_VIDEOS.icelandHorizon,
+    poster: TEMPLATE_IMAGES.travelHorizon,
+    aspectRatio: '16:9',
+    durationMs: 6000,
+    tag: 'MP4 · 16:9',
+  },
+  {
+    id: 'stk_vid_fashion',
+    kind: 'video',
+    title: 'Beauty Студия',
+    src: TEMPLATE_VIDEOS.fashionStudio,
+    poster: TEMPLATE_IMAGES.fashionEditorial,
+    aspectRatio: '9:16',
+    durationMs: 6000,
+    tag: 'MP4 · 9:16',
+  },
+  {
+    id: 'stk_vid_product',
+    kind: 'video',
+    title: 'Продукт 1:1 360°',
+    src: TEMPLATE_VIDEOS.productStudio,
+    poster: TEMPLATE_IMAGES.productStudio,
+    aspectRatio: '1:1',
+    durationMs: 6000,
+    tag: 'MP4 · 1:1',
+  },
+  {
+    id: 'stk_vid_action',
+    kind: 'video',
+    title: 'Экшн Velocity Дрифт',
+    src: TEMPLATE_VIDEOS.actionDrift,
+    poster: TEMPLATE_IMAGES.urbanReel,
+    aspectRatio: '9:16',
+    durationMs: 6000,
+    tag: 'MP4 · 9:16',
+  },
+  {
+    id: 'stk_img_urban',
+    kind: 'image',
+    title: 'Фото: Неоновая улица',
+    src: TEMPLATE_IMAGES.urbanReel,
+    aspectRatio: '9:16',
+    durationMs: 5000,
+    tag: 'JPG · 9:16',
+  },
+  {
+    id: 'stk_img_iceland',
+    kind: 'image',
+    title: 'Фото: Горы и закат',
+    src: TEMPLATE_IMAGES.travelHorizon,
+    aspectRatio: '16:9',
+    durationMs: 5000,
+    tag: 'JPG · 16:9',
+  },
+  {
+    id: 'stk_img_fashion',
+    kind: 'image',
+    title: 'Фото: Портрет',
+    src: TEMPLATE_IMAGES.fashionEditorial,
+    aspectRatio: '9:16',
+    durationMs: 5000,
+    tag: 'JPG · 9:16',
+  },
+];
+
 export function createDefaultColorGrade(): ColorGrade {
   return {
     brightness: 0,
@@ -99,6 +198,7 @@ export interface EditorTemplate {
   aspectRatio: AspectRatio;
   durationLabel: string;
   thumbnail: string;
+  videoSrc: string;
   audioPreviewPreset: string;
   audioLabel: string;
   transitionSummary: string;
@@ -114,6 +214,7 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '9:16',
     durationLabel: '00:12',
     thumbnail: TEMPLATE_IMAGES.urbanReel,
+    videoSrc: TEMPLATE_VIDEOS.tokyoNeon,
     audioPreviewPreset: 'synthwave',
     audioLabel: 'Cyber Pulse 124 BPM + SFX',
     transitionSummary: 'Глитч · Вспышка',
@@ -134,8 +235,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_c1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.urbanReel,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.tokyoNeon,
             name: 'Tokyo Rain 01',
             startMs: 0,
             durationMs: 4200,
@@ -154,8 +255,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_c2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.fashionEditorial,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.fashionStudio,
             name: 'Studio Beat 02',
             startMs: 4200,
             durationMs: 4000,
@@ -173,8 +274,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_c3',
-            type: 'image',
-            src: TEMPLATE_IMAGES.urbanReel,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.actionDrift,
             name: 'Final Flash 03',
             startMs: 8200,
             durationMs: 3800,
@@ -313,6 +414,7 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '16:9',
     durationLabel: '00:11',
     thumbnail: TEMPLATE_IMAGES.travelHorizon,
+    videoSrc: TEMPLATE_VIDEOS.icelandHorizon,
     audioPreviewPreset: 'ambient',
     audioLabel: 'Ambient Horizon 80 BPM',
     transitionSummary: 'Растворение · Сдвиг',
@@ -333,8 +435,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_h1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.travelHorizon,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.icelandHorizon,
             name: 'Iceland Cliffs 01',
             startMs: 0,
             durationMs: 5500,
@@ -352,8 +454,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_h2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.urbanReel,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.tokyoNeon,
             name: 'Twilight Horizon 02',
             startMs: 5500,
             durationMs: 5500,
@@ -452,6 +554,7 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '9:16',
     durationLabel: '00:10',
     thumbnail: TEMPLATE_IMAGES.fashionEditorial,
+    videoSrc: TEMPLATE_VIDEOS.fashionStudio,
     audioPreviewPreset: 'lofi',
     audioLabel: 'Late Night Lo-Fi 90 BPM',
     transitionSummary: 'Зум · Шторка',
@@ -472,8 +575,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_f1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.fashionEditorial,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.fashionStudio,
             name: 'Editorial Shot 01',
             startMs: 0,
             durationMs: 5000,
@@ -491,8 +594,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_f2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.productStudio,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.productStudio,
             name: 'Close Detail 02',
             startMs: 5000,
             durationMs: 5000,
@@ -588,6 +691,7 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '1:1',
     durationLabel: '00:09',
     thumbnail: TEMPLATE_IMAGES.productStudio,
+    videoSrc: TEMPLATE_VIDEOS.productStudio,
     audioPreviewPreset: 'trap',
     audioLabel: 'Trap Tech Beat 140 BPM',
     transitionSummary: 'Вращение · Вспышка',
@@ -608,8 +712,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_p1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.productStudio,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.productStudio,
             name: 'Studio Headphones 01',
             startMs: 0,
             durationMs: 4500,
@@ -623,8 +727,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_p2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.urbanReel,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.tokyoNeon,
             name: 'Lifestyle Shot 02',
             startMs: 4500,
             durationMs: 4500,
@@ -737,6 +841,7 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '9:16',
     durationLabel: '00:12',
     thumbnail: TEMPLATE_IMAGES.travelHorizon,
+    videoSrc: TEMPLATE_VIDEOS.icelandHorizon,
     audioPreviewPreset: 'lofi',
     audioLabel: 'Lo-Fi Chill + Whoosh',
     transitionSummary: 'Сдвиг · Растворение',
@@ -757,8 +862,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_v1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.travelHorizon,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.icelandHorizon,
             name: 'Morning View 01',
             startMs: 0,
             durationMs: 4000,
@@ -773,8 +878,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_v2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.fashionEditorial,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.fashionStudio,
             name: 'Street Walk 02',
             startMs: 4000,
             durationMs: 4000,
@@ -790,8 +895,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_v3',
-            type: 'image',
-            src: TEMPLATE_IMAGES.productStudio,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.productStudio,
             name: 'Coffee & Gear 03',
             startMs: 8000,
             durationMs: 4000,
@@ -888,8 +993,9 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
     aspectRatio: '9:16',
     durationLabel: '00:10',
     thumbnail: TEMPLATE_IMAGES.urbanReel,
-    audioPreviewPreset: 'trap',
-    audioLabel: 'Phonk / Trap 140 BPM',
+    videoSrc: TEMPLATE_VIDEOS.actionDrift,
+    audioPreviewPreset: 'phonk_drift',
+    audioLabel: 'Phonk Drift 142 BPM + SFX',
     transitionSummary: 'Глитч · Вспышка · Зум',
     animationSummary: 'Тряска · Быстрый зум',
     state: {
@@ -908,8 +1014,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_e1',
-            type: 'image',
-            src: TEMPLATE_IMAGES.urbanReel,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.actionDrift,
             name: 'Beat Cut 01',
             startMs: 0,
             durationMs: 3200,
@@ -922,8 +1028,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_e2',
-            type: 'image',
-            src: TEMPLATE_IMAGES.productStudio,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.productStudio,
             name: 'Beat Cut 02',
             startMs: 3200,
             durationMs: 3400,
@@ -938,8 +1044,8 @@ export const STUDIO_TEMPLATES: EditorTemplate[] = [
         {
           ...createClipFromMedia({
             id: 'tpl_e3',
-            type: 'image',
-            src: TEMPLATE_IMAGES.fashionEditorial,
+            type: 'video',
+            src: TEMPLATE_VIDEOS.fashionStudio,
             name: 'Beat Cut 03',
             startMs: 6600,
             durationMs: 3400,
@@ -1132,13 +1238,43 @@ export const STICKER_LIBRARY = [
 ];
 
 export const AUDIO_LIBRARY = [
-  { id: 'lib_synth', name: 'Cyber Pulse (124 BPM)', preset: 'synthwave', bpm: 124, durationMs: 15000, category: 'Музыка' },
-  { id: 'lib_trap', name: 'Urban Trap (140 BPM)', preset: 'trap', bpm: 140, durationMs: 15000, category: 'Музыка' },
-  { id: 'lib_ambient', name: 'Cinema Horizon (80 BPM)', preset: 'ambient', bpm: 80, durationMs: 20000, category: 'Музыка' },
-  { id: 'lib_lofi', name: 'Late Night Lo-Fi (90 BPM)', preset: 'lofi', bpm: 90, durationMs: 18000, category: 'Музыка' },
+  // Phonk
+  { id: 'lib_phonk_drift', name: 'Tokyo Drift Phonk (142 BPM)', preset: 'phonk_drift', bpm: 142, durationMs: 16000, category: 'Phonk' },
+  { id: 'lib_phonk_tokyo', name: 'Midnight Cowbell Phonk (138 BPM)', preset: 'phonk_tokyo', bpm: 138, durationMs: 18000, category: 'Phonk' },
+  { id: 'lib_phonk_agg', name: 'Turbo Bass Phonk (148 BPM)', preset: 'phonk_aggressive', bpm: 148, durationMs: 15000, category: 'Phonk' },
+  { id: 'lib_phonk_night', name: 'Shadow Street Phonk (134 BPM)', preset: 'phonk_night', bpm: 134, durationMs: 16000, category: 'Phonk' },
+  { id: 'lib_phonk_br', name: 'Funk Automotivo Phonk (130 BPM)', preset: 'phonk_brazil', bpm: 130, durationMs: 16000, category: 'Phonk' },
+  // Trap
+  { id: 'lib_trap', name: 'Urban Trap Beat (140 BPM)', preset: 'trap', bpm: 140, durationMs: 16000, category: 'Trap' },
+  { id: 'lib_trap_dark', name: 'Dark 808 Edit (136 BPM)', preset: 'trap_dark', bpm: 136, durationMs: 18000, category: 'Trap' },
+  { id: 'lib_drill_uk', name: 'London Drill 808 (144 BPM)', preset: 'drill_uk', bpm: 144, durationMs: 15000, category: 'Trap' },
+  { id: 'lib_hiphop', name: 'Old School Boom Bap (94 BPM)', preset: 'hiphop_boom', bpm: 94, durationMs: 20000, category: 'Trap' },
+  { id: 'lib_trap_lux', name: 'Luxury Lifestyle Trap (128 BPM)', preset: 'trap_luxury', bpm: 128, durationMs: 18000, category: 'Trap' },
+  // EDM
+  { id: 'lib_synth', name: 'Cyber Pulse Synthwave (124 BPM)', preset: 'synthwave', bpm: 124, durationMs: 18000, category: 'EDM' },
+  { id: 'lib_techno', name: 'Berlin Rave Techno (136 BPM)', preset: 'techno_rave', bpm: 136, durationMs: 16000, category: 'EDM' },
+  { id: 'lib_house', name: 'Club Deep House (122 BPM)', preset: 'house_club', bpm: 122, durationMs: 18000, category: 'EDM' },
+  { id: 'lib_future', name: 'Neon Future Bass (150 BPM)', preset: 'future_bass', bpm: 150, durationMs: 16000, category: 'EDM' },
+  { id: 'lib_dnb', name: 'Velocity Drum & Bass (172 BPM)', preset: 'drum_n_bass', bpm: 172, durationMs: 15000, category: 'EDM' },
+  // Pop
+  { id: 'lib_pop_viral', name: 'TikTok Viral Pop (120 BPM)', preset: 'pop_viral', bpm: 120, durationMs: 16000, category: 'Pop' },
+  { id: 'lib_funk', name: 'Summer Funk Groove (116 BPM)', preset: 'funk_upbeat', bpm: 116, durationMs: 18000, category: 'Pop' },
+  { id: 'lib_afro', name: 'Afrobeat Vibe (108 BPM)', preset: 'afrobeat', bpm: 108, durationMs: 18000, category: 'Pop' },
+  { id: 'lib_latino', name: 'Reggaeton Fiesta (98 BPM)', preset: 'reggaeton_latino', bpm: 98, durationMs: 18000, category: 'Pop' },
+  { id: 'lib_rock', name: 'Energy Sport Rock (132 BPM)', preset: 'rock_energy', bpm: 132, durationMs: 16000, category: 'Pop' },
+  // Lo-Fi
+  { id: 'lib_lofi', name: 'Late Night Lo-Fi (90 BPM)', preset: 'lofi', bpm: 90, durationMs: 20000, category: 'Lo-Fi' },
+  { id: 'lib_ambient', name: 'Cinema Horizon (80 BPM)', preset: 'ambient', bpm: 80, durationMs: 22000, category: 'Lo-Fi' },
+  { id: 'lib_piano', name: 'Emotional Piano (76 BPM)', preset: 'piano_sad', bpm: 76, durationMs: 20000, category: 'Lo-Fi' },
+  { id: 'lib_epic', name: 'Epic Trailer Drums (105 BPM)', preset: 'epic_trailer', bpm: 105, durationMs: 18000, category: 'Lo-Fi' },
+  { id: 'lib_chill', name: 'Sunset Acoustic Chill (96 BPM)', preset: 'chill_sunset', bpm: 96, durationMs: 20000, category: 'Lo-Fi' },
+  // SFX
   { id: 'sfx_whoosh', name: 'SFX: Быстрый свуш', preset: 'whoosh', bpm: 120, durationMs: 1500, category: 'Эффекты' },
-  { id: 'sfx_riser', name: 'SFX: Кино-подъём', preset: 'riser', bpm: 120, durationMs: 3000, category: 'Эффекты' },
+  { id: 'sfx_riser', name: 'SFX: Кино-подъём (Riser)', preset: 'riser', bpm: 120, durationMs: 2500, category: 'Эффекты' },
   { id: 'sfx_pop', name: 'SFX: Клик / Поп', preset: 'pop', bpm: 120, durationMs: 800, category: 'Эффекты' },
+  { id: 'sfx_boom', name: 'SFX: Бас-удар (Boom)', preset: 'boom_impact', bpm: 120, durationMs: 1500, category: 'Эффекты' },
+  { id: 'sfx_shutter', name: 'SFX: Затвор камеры', preset: 'camera_shutter', bpm: 120, durationMs: 600, category: 'Эффекты' },
+  { id: 'sfx_glitch', name: 'SFX: Цифровой глитч', preset: 'glitch_sfx', bpm: 120, durationMs: 1000, category: 'Эффекты' },
 ];
 
 export const TEXT_TEMPLATES = [

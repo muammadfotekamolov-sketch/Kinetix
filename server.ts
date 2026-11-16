@@ -10,6 +10,16 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '25mb' }));
+  app.use(
+    '/templates',
+    express.static(path.resolve(process.cwd(), 'public', 'templates'), {
+      acceptRanges: true,
+      setHeaders: (res) => {
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      },
+    }),
+  );
   registerRoutes(app);
 
   if (process.env.NODE_ENV !== 'production') {

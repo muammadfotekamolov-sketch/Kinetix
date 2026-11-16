@@ -6,6 +6,7 @@ import {
   Home,
   Layers,
   Plus,
+  Smartphone,
   Sparkles,
   Trash2,
   User,
@@ -16,17 +17,21 @@ import { t } from '../data/i18n.ts';
 import {
   createClipFromMedia,
   STUDIO_TEMPLATES,
-  TEMPLATE_IMAGES,
+  TEMPLATE_VIDEOS,
   type EditorTemplate,
 } from '../data/templates.ts';
+import { getAuthToken } from '../lib/api.ts';
 import { audioEngine } from '../lib/audioEngine.ts';
 import type {
+  AudioClip,
   LanguageCode,
   ProjectRecord,
   ProjectState,
   UserProfile,
+  VideoClip,
 } from '../types/editor.ts';
 import { KinetixLogo } from './KinetixLogo.tsx';
+import { MediaLibraryModal, type ImportedMediaResult } from './MediaLibraryModal.tsx';
 import { ProfileSettingsView } from './ProfileSettingsView.tsx';
 
 interface Props {
@@ -57,6 +62,7 @@ export function HomeView({
   const dict = t(lang);
   const [activeTab, setActiveTab] = useState<'home' | 'templates' | 'profile'>('home');
   const [previewingTplId, setPreviewingTplId] = useState<string | null>(null);
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const toggleTemplateAudio = (tpl: EditorTemplate) => {
@@ -72,17 +78,121 @@ export function HomeView({
     }
   };
 
-  const createBlankOrMediaProject = (files?: FileList | null) => {
-    const clips = [];
+  const openImportedMediaInEditor = (items: ImportedMediaResult[]) => {
     let cursorMs = 0;
-    if (files && files.length > 0) {
-      for (const file of Array.from(files)) {
-        const url = URL.createObjectURL(file);
-        const isVideo = file.type.startsWith('video/');
-        const dur = isVideo ? 8000 : 5000;
+    const clips: VideoClip[] = [];
+    const audioClips: AudioClip[] = [];
+    let chosenRatio: ProjectState['aspectRatio'] = '9:16';
+
+    for (const item of items) {
+      if (item.aspectRatio) chosenRatio = item.aspectRatio;
+      if (item.kind === 'audio') {
+        audioClips.push({
+          id: `aud_home_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          track: 'A1',
+          name: item.name,
+          src: item.src,
+          synthPreset: item.synthPreset,
+          startMs: 0,
+          durationMs: item.durationMs,
+          volume: 85,
+          fadeInMs: 250,
+          fadeOutMs: 500,
+          voiceEffect: 'none',
+          denoise: false,
+          eq: [0, 0, 0, 0, 0],
+          beatSynced: true,
+        });
+      } else {
         clips.push(
           createClipFromMedia({
-            type: isVideo ? 'video' : 'image',
+            type: item.kind,
+            src: item.src,
+            name: item.name,
+            startMs: cursorMs,
+            durationMs: item.durationMs,
+          }),
+        );
+        cursorMs += item.durationMs;
+      }
+    }
+
+    if (clips.length === 0) {
+      clips.push(
+        createClipFromMedia({
+          type: 'video',
+          src: TEMPLATE_VIDEOS.tokyoNeon,
+          name: 'Видео-сцена MP4',
+          startMs: 0,
+          durationMs: 6000,
+        }),
+      );
+    }
+
+    onOpenEditor(
+      {
+        title: clips[0]?.name.slice(0, 32) || 'Новый проект',
+        aspectRatio: chosenRatio,
+        resolution: '1080p',
+        fps: 30,
+        background: {
+          type: 'color',
+          color: '#000000',
+          gradient: 'linear-gradient(135deg, #09090b, #1e1b4b)',
+          blurAmount: 16,
+          imageUrl: '',
+        },
+        clips,
+        texts: [],
+        stickers: [],
+        audioClips,
+        effects: [],
+        markers: [],
+      },
+      null,
+    );
+  };
+
+  const createBlankOrMediaProject = async (files?: FileList | null) => {
+    const clips: VideoClip[] = [];
+    let cursorMs = 0;
+    if (files && files.length > 0) {
+      const token = getAuthToken();
+      for (const file of Array.from(files)) {
+        const lower = file.name.toLowerCase();
+        const isVideo =
+          file.type.startsWith('video/') || /\.(mp4|mov|m4v|3gp|mkv|avi|webm)$/.test(lower);
+        const needsTranscode = /\.(mov|3gp|mkv|avi|heic|heif|m4v)$/.test(lower);
+        let url = URL.createObjectURL(file);
+        let resolvedType: 'video' | 'image' = isVideo ? 'video' : 'image';
+        if (needsTranscode && token) {
+          try {
+            const buf = await file.arrayBuffer();
+            const resp = await fetch('/api/media/import', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/octet-stream',
+                'X-Media-Name': encodeURIComponent(file.name),
+                'X-Media-Mime': file.type || 'application/octet-stream',
+              },
+              body: buf,
+            });
+            if (resp.ok) {
+              const data = (await resp.json()) as { url?: string; mediaType?: 'video' | 'image' };
+              if (data.url) url = data.url;
+              if (data.mediaType === 'video' || data.mediaType === 'image') {
+                resolvedType = data.mediaType;
+              }
+            }
+          } catch {
+            // keep blob URL
+          }
+        }
+        const dur = resolvedType === 'video' ? 7000 : 5000;
+        clips.push(
+          createClipFromMedia({
+            type: resolvedType,
             src: url,
             name: file.name,
             startMs: cursorMs,
@@ -94,9 +204,9 @@ export function HomeView({
     } else {
       clips.push(
         createClipFromMedia({
-          type: 'image',
-          src: TEMPLATE_IMAGES.urbanReel,
-          name: 'Основная сцена',
+          type: 'video',
+          src: TEMPLATE_VIDEOS.tokyoNeon,
+          name: 'Демо-сцена MP4',
           startMs: 0,
           durationMs: 6000,
         }),
@@ -195,10 +305,10 @@ export function HomeView({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="video/*,image/*"
+        accept="video/*,image/*,.mp4,.mov,.m4v,.3gp,.mkv,.avi,.webm,.heic,.heif,.jpg,.jpeg,.png,.webp"
         className="hidden"
         onChange={(e) => {
-          createBlankOrMediaProject(e.target.files);
+          void createBlankOrMediaProject(e.target.files);
           e.target.value = '';
         }}
       />
@@ -246,14 +356,22 @@ export function HomeView({
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() => createBlankOrMediaProject(null)}
+                onClick={() => void createBlankOrMediaProject(null)}
                 className="text-xs text-zinc-400 hover:text-[#00E5FF] flex items-center gap-1.5"
               >
                 <Film className="w-3.5 h-3.5" />
-                <span>Или создать пустой проект с демо-сценой</span>
+                <span>Или создать пустой проект с демо-видео</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMediaModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-[#1C1C1E] border border-[#00E5FF]/35 text-xs font-medium text-[#00E5FF] hover:bg-[#00E5FF]/10 flex items-center gap-1.5"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Медиатека для всех телефонов</span>
               </button>
             </div>
 
@@ -348,12 +466,20 @@ export function HomeView({
                       onClick={() => openTemplate(tpl)}
                       className="text-left flex-1"
                     >
-                      <div className="aspect-[16/10] bg-[#1C1C1E] overflow-hidden">
-                        <img
-                          src={tpl.thumbnail}
-                          alt={tpl.title}
+                      <div className="aspect-[16/10] bg-[#1C1C1E] overflow-hidden relative">
+                        <video
+                          src={tpl.videoSrc}
+                          poster={tpl.thumbnail}
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          preload="metadata"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
+                        <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/75 border border-white/15 text-[9px] font-mono-tabular text-[#00E5FF]">
+                          MP4 · ВИДЕО
+                        </span>
                       </div>
                       <div className="p-3.5 space-y-1">
                         <div className="text-xs font-semibold text-white truncate">{tpl.title}</div>
@@ -394,7 +520,7 @@ export function HomeView({
             <div>
               <h1 className="font-display text-2xl font-bold text-white">{dict.templates}</h1>
               <p className="text-sm text-zinc-400 mt-1">
-                Готовые монтажные проекты со звуком, звуковыми эффектами, анимациями и переходами
+                Готовые видеошаблоны MP4 со звуком, звуковыми эффектами, анимациями и переходами
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -403,12 +529,20 @@ export function HomeView({
                   key={tpl.id}
                   className="rounded-2xl bg-[#121212] border border-white/10 overflow-hidden flex flex-col justify-between"
                 >
-                  <div className="aspect-[4/3] bg-[#1C1C1E] overflow-hidden">
-                    <img
-                      src={tpl.thumbnail}
-                      alt={tpl.title}
+                  <div className="aspect-[4/3] bg-[#1C1C1E] overflow-hidden relative">
+                    <video
+                      src={tpl.videoSrc}
+                      poster={tpl.thumbnail}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
                       className="w-full h-full object-cover"
                     />
+                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-black/75 border border-white/15 text-[10px] font-mono-tabular text-[#00E5FF]">
+                      MP4 · {tpl.aspectRatio}
+                    </span>
                   </div>
                   <div className="p-4 space-y-3">
                     <div className="space-y-1">
@@ -507,6 +641,13 @@ export function HomeView({
           <span className="text-[10px] font-medium">{dict.profile}</span>
         </button>
       </nav>
+
+      {mediaModalOpen && (
+        <MediaLibraryModal
+          onClose={() => setMediaModalOpen(false)}
+          onSelectMedia={openImportedMediaInEditor}
+        />
+      )}
     </div>
   );
 }

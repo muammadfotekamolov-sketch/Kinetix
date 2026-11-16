@@ -235,10 +235,89 @@ export function AiStudioModal({
         startMs: 0,
         durationMs: durationSec * 1000,
       });
+
+      const fullPromptLower = `${idea} ${refinePrompt}`.toLowerCase();
+      let filterPreset = style === 'anime' ? 'vivid' : 'cinema';
+      if (/ч[её]рно-?бел|чб|bw|black.*white|нуар/.test(fullPromptLower)) filterPreset = 'bw';
+      else if (/винтаж|vhs|ретро|vintage/.test(fullPromptLower)) filterPreset = 'vintage';
+      else if (/т[её]пл|закат|warm/.test(fullPromptLower)) filterPreset = 'warm';
+      else if (/холод|л[её]д|синий|cool/.test(fullPromptLower)) filterPreset = 'cool';
+      else if (/ярк|сочн|неон|vivid/.test(fullPromptLower)) filterPreset = 'vivid';
+
+      const isFastPacing = /быстр|динамич|экшн|энергич|fast|dynamic|action|зум/.test(fullPromptLower);
+      const isSlowPacing = /плавн|медлен|спокойн|smooth|slow/.test(fullPromptLower);
+
+      clip.animIn = isFastPacing ? 'zoom-in' : isSlowPacing ? 'fade' : 'zoom-in';
+      clip.animOut = 'fade';
+      clip.animLoop = isFastPacing ? 'pulse' : 'none';
+      clip.transitionIn = /глитч|glitch/.test(fullPromptLower)
+        ? 'glitch'
+        : isFastPacing
+          ? 'zoom'
+          : 'dissolve';
       clip.color = {
         ...createDefaultColorGrade(),
-        filterPreset: style === 'anime' ? 'vivid' : 'cinema',
+        filterPreset,
+        contrast: /контраст|драмат/.test(fullPromptLower) ? 20 : 8,
+        saturation: /ярк|сочн/.test(fullPromptLower) ? 22 : 0,
       };
+
+      const detectedEffects: ProjectState['effects'] = [];
+      if (/неон|киберпанк|cyber|neon/.test(fullPromptLower)) {
+        detectedEffects.push({
+          id: `ai_efx_${Date.now()}_neon`,
+          name: 'Неоновый контур',
+          effectKey: 'neon',
+          category: 'video',
+          startMs: 0,
+          durationMs: durationSec * 1000,
+          intensity: 75,
+        });
+      }
+      if (/vhs|пл[её]нк|ретро/.test(fullPromptLower)) {
+        detectedEffects.push({
+          id: `ai_efx_${Date.now()}_vhs`,
+          name: 'Ретро VHS лента',
+          effectKey: 'vhs',
+          category: 'video',
+          startMs: 0,
+          durationMs: durationSec * 1000,
+          intensity: 65,
+        });
+      }
+      if (/глитч|glitch/.test(fullPromptLower)) {
+        detectedEffects.push({
+          id: `ai_efx_${Date.now()}_gl`,
+          name: 'Цифровой глитч',
+          effectKey: 'glitch',
+          category: 'video',
+          startMs: 0,
+          durationMs: durationSec * 1000,
+          intensity: 70,
+        });
+      }
+      if (/искр|звезд|блеск|маги|волшеб/.test(fullPromptLower)) {
+        detectedEffects.push({
+          id: `ai_efx_${Date.now()}_sp`,
+          name: 'Искры и блики',
+          effectKey: 'sparkle',
+          category: 'video',
+          startMs: 0,
+          durationMs: durationSec * 1000,
+          intensity: 75,
+        });
+      }
+
+      let musicPreset = style === 'anime' ? 'lofi' : style === 'cartoon' ? 'pop_viral' : 'synthwave';
+      if (/фонк|phonk|дрифт/.test(fullPromptLower)) musicPreset = 'phonk_drift';
+      else if (/трэп|trap|рэп/.test(fullPromptLower)) musicPreset = 'trap';
+      else if (/дрилл|drill/.test(fullPromptLower)) musicPreset = 'drill_uk';
+      else if (/техно|techno/.test(fullPromptLower)) musicPreset = 'techno_rave';
+      else if (/хаус|house|клуб/.test(fullPromptLower)) musicPreset = 'house_club';
+      else if (/lofi|лоу-?фай|спокойн/.test(fullPromptLower)) musicPreset = 'lofi';
+      else if (/пианин|грустн|piano/.test(fullPromptLower)) musicPreset = 'piano_sad';
+      else if (/эпик|космос|дракон|epic/.test(fullPromptLower)) musicPreset = 'epic_trailer';
+      else if (/поп|влог|весел/.test(fullPromptLower)) musicPreset = 'pop_viral';
 
       let cursorMs = 0;
       const textOverlays = scenes
@@ -297,7 +376,7 @@ export function AiStudioModal({
                 track: 'A1',
                 name: activeScript?.musicMood || 'AI Soundtrack',
                 src: '',
-                synthPreset: style === 'anime' ? 'lofi' : 'synthwave',
+                synthPreset: musicPreset,
                 startMs: 0,
                 durationMs: durationSec * 1000,
                 volume: 75,
@@ -310,7 +389,7 @@ export function AiStudioModal({
               },
             ]
           : [],
-        effects: [],
+        effects: detectedEffects,
         markers: [],
       };
 
